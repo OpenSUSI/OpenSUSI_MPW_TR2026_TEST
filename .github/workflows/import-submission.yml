@@ -7,28 +7,23 @@ on:
         description: "OpenSUSI order ID"
         required: true
         type: string
-
       github_id:
         description: "GitHub owner/user name"
         required: true
         type: string
-
       source_repo:
         description: "Source repository in owner/repo format"
         required: true
         type: string
-
       source_run_id:
         description: "GitHub Actions workflow run ID"
         required: true
         type: string
-
       source_artifact_name:
         description: "Artifact name to import"
         required: true
         default: "GDSII_MDP"
         type: string
-
       target_dir:
         description: "Destination directory in this repo"
         required: true
@@ -81,17 +76,8 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${API_URL}")
 
-          ARTIFACT_ID=$(printf '%s' "${JSON}" | python3 - <<'PY'
-import json, sys, os
-data = json.load(sys.stdin)
-wanted = os.environ["SOURCE_ARTIFACT_NAME"]
-for a in data.get("artifacts", []):
-    if a.get("name") == wanted:
-        print(a["id"])
-        raise SystemExit(0)
-raise SystemExit(1)
-PY
-)
+          export SOURCE_ARTIFACT_NAME
+          ARTIFACT_ID=$(printf '%s' "${JSON}" | python3 -c 'import json,sys,os; d=json.load(sys.stdin); w=os.environ["SOURCE_ARTIFACT_NAME"]; m=next((a["id"] for a in d.get("artifacts",[]) if a.get("name")==w),None); sys.exit(1) if m is None else print(m)')
 
           if [ -z "${ARTIFACT_ID}" ]; then
             echo "Artifact not found: ${SOURCE_ARTIFACT_NAME}"
@@ -122,7 +108,6 @@ PY
       - name: Place imported GDS
         env:
           TARGET_DIR: ${{ inputs.target_dir }}
-          SOURCE_ARTIFACT_NAME: ${{ inputs.source_artifact_name }}
         run: |
           set -euo pipefail
 
@@ -143,18 +128,15 @@ PY
       - name: Write import manifest
         env:
           TARGET_DIR: ${{ inputs.target_dir }}
+          ORDER_ID: ${{ inputs.order_id }}
+          GITHUB_ID: ${{ inputs.github_id }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_ARTIFACT_NAME: ${{ inputs.source_artifact_name }}
         run: |
           set -euo pipefail
 
-          cat > "${TARGET_DIR}/manifest.json" <<EOF
-          {
-            "orderId": "${{ inputs.order_id }}",
-            "githubId": "${{ inputs.github_id }}",
-            "sourceRepo": "${{ inputs.source_repo }}",
-            "sourceRunId": "${{ inputs.source_run_id }}",
-            "sourceArtifactName": "${{ inputs.source_artifact_name }}"
-          }
-          EOF
+          python3 -c 'import json,os; from pathlib import Path; t=Path(os.environ["TARGET_DIR"]); t.mkdir(parents=True,exist_ok=True); m={"orderId":os.environ["ORDER_ID"],"githubId":os.environ["GITHUB_ID"],"sourceRepo":os.environ["SOURCE_REPO"],"sourceRunId":os.environ["SOURCE_RUN_ID"],"sourceArtifactName":os.environ["SOURCE_ARTIFACT_NAME"]}; (t/"manifest.json").write_text(json.dumps(m,indent=2),encoding="utf-8")'
 
           cat "${TARGET_DIR}/manifest.json"
 
