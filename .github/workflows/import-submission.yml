@@ -1,3 +1,8 @@
+# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
+# OpenSUSI jun1okamura <jun1okamura@gmail.com>  
+# LICENSE: Apache License Version 2.0, January 2004,
+#          http://www.apache.org/licenses/
+# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
 name: Import Submission
 
 on:
@@ -29,6 +34,9 @@ on:
         required: true
         type: string
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   import:
     runs-on: ubuntu-latest
@@ -57,7 +65,7 @@ jobs:
           echo "source_artifact_name=${{ inputs.source_artifact_name }}"
           echo "target_dir=${{ inputs.target_dir }}"
 
-      - name: Download artifact ZIP from source repo
+      - name: Download artifact ZIP
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_REPO: ${{ inputs.source_repo }}
@@ -67,45 +75,35 @@ jobs:
           set -euo pipefail
 
           mkdir -p work
+
           API_URL="https://api.github.com/repos/${SOURCE_REPO}/actions/runs/${SOURCE_RUN_ID}/artifacts"
 
-          echo "Listing artifacts from ${SOURCE_REPO}, run ${SOURCE_RUN_ID}"
           JSON=$(curl -fsSL \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
             "${API_URL}")
 
-          export SOURCE_ARTIFACT_NAME
-          ARTIFACT_ID=$(printf '%s' "${JSON}" | python3 -c 'import json,sys,os; d=json.load(sys.stdin); w=os.environ["SOURCE_ARTIFACT_NAME"]; m=next((a["id"] for a in d.get("artifacts",[]) if a.get("name")==w),None); sys.exit(1) if m is None else print(m)')
+          echo "$JSON" > work/artifacts.json
 
-          if [ -z "${ARTIFACT_ID}" ]; then
-            echo "Artifact not found: ${SOURCE_ARTIFACT_NAME}"
-            exit 1
-          fi
+          ARTIFACT_ID=$(python3 scripts/resolve_artifact_id.py \
+            --json-file work/artifacts.json \
+            --artifact-name "${SOURCE_ARTIFACT_NAME}")
 
-          echo "Resolved artifact id: ${ARTIFACT_ID}"
+          echo "artifact_id=${ARTIFACT_ID}"
 
           ZIP_API="https://api.github.com/repos/${SOURCE_REPO}/actions/artifacts/${ARTIFACT_ID}/zip"
 
-          echo "Downloading artifact ZIP"
           curl -fsSL \
             -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
             "${ZIP_API}" \
             -o work/submission.zip
 
-          ls -lh work/submission.zip
-
-      - name: Unzip artifact
+      - name: Unzip
         run: |
-          set -euo pipefail
           mkdir -p work/unpacked
           unzip -o work/submission.zip -d work/unpacked
-          find work/unpacked -maxdepth 3 -type f | sort
 
-      - name: Place imported GDS
+      - name: Place GDS
         env:
           TARGET_DIR: ${{ inputs.target_dir }}
         run: |
@@ -113,40 +111,25 @@ jobs:
 
           mkdir -p "${TARGET_DIR}"
 
-          GDS_FILE=$(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \) | head -n 1 || true)
-
-          if [ -z "${GDS_FILE}" ]; then
-            echo "No GDS file found in artifact ZIP"
-            exit 1
-          fi
+          GDS_FILE=$(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \) | head -n 1)
 
           cp "${GDS_FILE}" "${TARGET_DIR}/GDSII_MDP.gds"
 
-          echo "Placed:"
-          ls -lh "${TARGET_DIR}/GDSII_MDP.gds"
-
-      - name: Write import manifest
-        env:
-          TARGET_DIR: ${{ inputs.target_dir }}
-          ORDER_ID: ${{ inputs.order_id }}
-          GITHUB_ID: ${{ inputs.github_id }}
-          SOURCE_REPO: ${{ inputs.source_repo }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-          SOURCE_ARTIFACT_NAME: ${{ inputs.source_artifact_name }}
+      - name: Write manifest
         run: |
-          set -euo pipefail
+          python3 scripts/write_import_manifest.py \
+            --target-dir "${{ inputs.target_dir }}" \
+            --order-id "${{ inputs.order_id }}" \
+            --github-id "${{ inputs.github_id }}" \
+            --source-repo "${{ inputs.source_repo }}" \
+            --source-run-id "${{ inputs.source_run_id }}" \
+            --source-artifact-name "${{ inputs.source_artifact_name }}"
 
-          python3 -c 'import json,os; from pathlib import Path; t=Path(os.environ["TARGET_DIR"]); t.mkdir(parents=True,exist_ok=True); m={"orderId":os.environ["ORDER_ID"],"githubId":os.environ["GITHUB_ID"],"sourceRepo":os.environ["SOURCE_REPO"],"sourceRunId":os.environ["SOURCE_RUN_ID"],"sourceArtifactName":os.environ["SOURCE_ARTIFACT_NAME"]}; (t/"manifest.json").write_text(json.dumps(m,indent=2),encoding="utf-8")'
-
-          cat "${TARGET_DIR}/manifest.json"
-
-      - name: Commit and push
+      - name: Commit
         run: |
-          set -euo pipefail
-
           git config user.name "opensusi-bot"
           git config user.email "bot@opensusi.org"
 
           git add "${{ inputs.target_dir }}"
-          git commit -m "Import ${{ inputs.github_id }} from run ${{ inputs.source_run_id }}" || echo "No changes"
+          git commit -m "Import ${{ inputs.github_id }}" || echo "No changes"
           git push
