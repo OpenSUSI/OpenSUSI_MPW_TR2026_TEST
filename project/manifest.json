@@ -1,6 +1,6 @@
 {
   "topCell": "AGGREGATED_TOP",
-  "outputGds": "project/ALL_GDSII_MDP.gds",
+  "outputGds": "project/MDP_GDSII_ALL.gds",
   "pitch": {
     "x": 2500.0,
     "y": 2500.0
