@@ -5,25 +5,26 @@
 # ----- ------ ----- ----- ------ ----- ----- ------ ----- 
 def build_positions(grid_x: int, grid_y: int, pitch_x: float, pitch_y: float):
     """
-    Build tile-center positions so that the total tiled BBOX center is always (0, 0).
-
-    Placement order:
-    - start from upper-right
-    - move right to left
-    - then next row downward
+    Build tile-center positions so that:
+    - tile coordinate (0,0) is the upper-left slot
+    - slots advance left-to-right within a row
+    - then top-to-bottom by rows
+    - the overall tiled BBOX center is always at (0,0)
 
     Returns:
       [(tile_index, row, col, x, y), ...]
     """
 
-    x_centers = [((grid_x - 1) / 2.0 - i) * pitch_x for i in range(grid_x)]
-    y_centers = [((grid_y - 1) / 2.0 - i) * pitch_y for i in range(grid_y)]
-
     positions = []
     tile_index = 0
 
-    for row, y in enumerate(y_centers):
-        for col, x in enumerate(x_centers):
+    x0 = (grid_x - 1) / 2.0
+    y0 = (grid_y - 1) / 2.0
+
+    for row in range(grid_y):
+        for col in range(grid_x):
+            x = (col - x0) * pitch_x
+            y = (y0 - row) * pitch_y
             positions.append((tile_index, row, col, x, y))
             tile_index += 1
 

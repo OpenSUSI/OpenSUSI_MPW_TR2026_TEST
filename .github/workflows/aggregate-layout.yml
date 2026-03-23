@@ -1,0 +1,85 @@
+# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
+# OpenSUSI jun1okamura <jun1okamura@gmail.com>  
+# LICENSE: Apache License Version 2.0, January 2004,
+#          http://www.apache.org/licenses/
+# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
+name: Aggregate Layout
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "users/**"
+      - "info.yaml"
+      - "scripts/aggregate_*.py"
+      - "scripts/generate_users_*.py"
+      - ".github/workflows/aggregate-layout.yml"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python packages
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyyaml klayout
+
+      - name: Prepare output directory
+        run: |
+          mkdir -p project
+
+      - name: Aggregate GDS
+        run: |
+          python3 scripts/aggregate_submission.py \
+            --info-yaml info.yaml \
+            --users-dir users \
+            --output-gds project/MDP_GDSII_ALL.gds \
+            --output-manifest project/manifest.json
+
+      - name: Generate USERS.md
+        run: |
+          python3 scripts/generate_users_md.py \
+            --manifest project/manifest.json \
+            --output USERS.md
+
+      - name: Generate USERS.svg
+        run: |
+          python3 scripts/generate_users_svg.py \
+            --manifest project/manifest.json \
+            --output USERS.svg \
+            --repo-owner "${{ github.repository_owner }}" \
+            --repo-name "${{ github.event.repository.name }}" \
+            --branch "${{ github.ref_name }}"
+
+      - name: Show generated files
+        run: |
+          ls -lh project || true
+          ls -lh USERS.md USERS.svg || true
+
+      - name: Commit and push generated files
+        run: |
+          git config user.name "opensusi-bot"
+          git config user.email "bot@opensusi.org"
+
+          git add project/manifest.json
+          git add project/MDP_GDSII_ALL.gds
+          git add USERS.md
+          git add USERS.svg
+
+          git commit -m "Update aggregated layout and user views" || echo "No changes"
+          git push

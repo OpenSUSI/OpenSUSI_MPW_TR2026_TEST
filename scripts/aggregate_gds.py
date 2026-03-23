@@ -11,30 +11,34 @@ from aggregate_manifest import Placement
 from aggregate_scan import UserEntry
 
 
-SYSTEM_TEG_DIRNAME  = "00_system"
+SYSTEM_TEG_DIRNAME = "000_system"
 SYSTEM_FILL_DIRNAME = "000_system"
 
-def load_layout(path: Path) -> pya.Layout:
-    if not path.exists():
-        raise FileNotFoundError(f"GDS not found: {path}")
 
-    layout = pya.Layout()
-    layout.read(str(path))
-    return layout
+def get_top_cells(layout: pya.Layout) -> list[pya.Cell]:
+    return list(layout.top_cells())
 
 
-def get_single_top(layout: pya.Layout, source: Path) -> pya.Cell:
-    top_cells = list(layout.top_cells())
+def get_single_top_cell_name_after_read(layout: pya.Layout, before_names: set[str], source: Path) -> str:
+    after_names = {cell.name for cell in get_top_cells(layout)}
+    new_names = sorted(after_names - before_names)
 
-    if len(top_cells) != 1:
-        names = [c.name for c in top_cells]
-        raise RuntimeError(f"GDS must have exactly one top cell: {source}, tops={names}")
+    if len(new_names) != 1:
+        raise RuntimeError(
+            f"GDS must add exactly one top cell when read: {source}, added={new_names}"
+        )
 
-    return top_cells[0]
+    return new_names[0]
 
 
-def bbox_um(cell: pya.Cell, dbu: float) -> dict[str, float]:
+def load_single_top_bbox(layout: pya.Layout, top_name: str) -> dict[str, float]:
+    cell = layout.cell(top_name)
+    if cell is None:
+        raise RuntimeError(f"Cell not found after read: {top_name}")
+
     box = cell.bbox()
+    dbu = layout.dbu
+
     return {
         "left": box.left * dbu,
         "bottom": box.bottom * dbu,
@@ -45,23 +49,18 @@ def bbox_um(cell: pya.Cell, dbu: float) -> dict[str, float]:
     }
 
 
-def ensure_size_within_pitch(cell: pya.Cell, dbu: float, pitch_x: float, pitch_y: float, source: Path) -> None:
-    b = bbox_um(cell, dbu)
-    if b["width"] > pitch_x or b["height"] > pitch_y:
+def ensure_size_within_pitch(layout: pya.Layout, top_name: str, pitch_x: float, pitch_y: float, source: Path) -> None:
+    bbox = load_single_top_bbox(layout, top_name)
+    if bbox["width"] > pitch_x or bbox["height"] > pitch_y:
         raise RuntimeError(
             f"GDS exceeds tile size: {source}, "
-            f"width={b['width']}, height={b['height']}, pitch=({pitch_x}, {pitch_y})"
+            f"width={bbox['width']}, height={bbox['height']}, pitch=({pitch_x}, {pitch_y})"
         )
 
 
 def insert_instance(parent: pya.Cell, child: pya.Cell, x_um: float, y_um: float, dbu: float) -> None:
     trans = pya.Trans(pya.Point(int(round(x_um / dbu)), int(round(y_um / dbu))))
     parent.insert(pya.CellInstArray(child.cell_index(), trans))
-
-
-def copy_layout_tree(target_layout: pya.Layout, source_layout: pya.Layout) -> None:
-    cell_mapping = pya.CellMapping()
-    target_layout.copy_tree_shapes(source_layout, cell_mapping)
 
 
 def make_placement(
@@ -95,13 +94,30 @@ def make_placement(
     )
 
 
+def read_gds_into_layout(layout: pya.Layout, gds_path: Path) -> str:
+    if not gds_path.exists():
+        raise FileNotFoundError(f"GDS not found: {gds_path}")
+
+    before_names = {cell.name for cell in get_top_cells(layout)}
+    layout.read(str(gds_path))
+    top_name = get_single_top_cell_name_after_read(layout, before_names, gds_path)
+    return top_name
+
+
 def aggregate(config, users: list[UserEntry], positions, out_gds: Path):
     max_tiles = config.grid_x * config.grid_y
-    if len(users) > max_tiles:
-        raise RuntimeError(f"Too many users: {len(users)} > {max_tiles}")
 
-    if len(users) < max_tiles and not config.fill_gds:
-        raise RuntimeError("fillgds is required when user count is less than grid capacity")
+    # TEG uses one tile if present
+    teg_slots = 1 if config.teg_gds else 0
+    available_user_slots = max_tiles - teg_slots
+
+    if len(users) > available_user_slots:
+        raise RuntimeError(
+            f"Too many users: {len(users)} > available user slots {available_user_slots}"
+        )
+
+    if len(users) < available_user_slots and not config.fill_gds:
+        raise RuntimeError("fillgds is required when user count is less than remaining grid capacity")
 
     if config.teg_gds and not config.teg_gds.exists():
         raise FileNotFoundError(f"TEG GDS not found: {config.teg_gds}")
@@ -110,70 +126,65 @@ def aggregate(config, users: list[UserEntry], positions, out_gds: Path):
         raise FileNotFoundError(f"Fill GDS not found: {config.fill_gds}")
 
     layout = pya.Layout()
+    layout.dbu = 0.001
     top = layout.create_cell(config.top_cell)
     placements: list[Placement] = []
 
-    dbu: Optional[float] = None
+    # ----------------------------
+    # 1. TEG at tile position (0,0) => positions[0]
+    # ----------------------------
+    start_user_index = 0
 
-    # TEG at origin
     if config.teg_gds:
-        teg_layout = load_layout(config.teg_gds)
-        teg_top = get_single_top(teg_layout, config.teg_gds)
+        teg_tile_index, teg_row, teg_col, teg_x, teg_y = positions[0]
 
-        dbu = teg_layout.dbu
-        layout.dbu = dbu
+        top_name = read_gds_into_layout(layout, config.teg_gds)
+        teg_cell = layout.cell(top_name)
 
-        copy_layout_tree(layout, teg_layout)
-        copied_teg = layout.cell(teg_top.name)
-        if copied_teg is None:
-            raise RuntimeError(f"Failed to copy TEG top cell: {teg_top.name}")
+        if teg_cell is None:
+            raise RuntimeError(f"Failed to load TEG top cell: {top_name}")
 
-        insert_instance(top, copied_teg, 0.0, 0.0, dbu)
+        ensure_size_within_pitch(layout, top_name, config.pitch_x, config.pitch_y, config.teg_gds)
+        insert_instance(top, teg_cell, teg_x, teg_y, layout.dbu)
 
         placements.append(
             make_placement(
                 entry_type="teg",
                 github_id=SYSTEM_TEG_DIRNAME,
                 gds_file=config.teg_gds,
-                top_name=copied_teg.name,
-                x=0.0,
-                y=0.0,
-                tile_index=-1,
-                row=None,
-                col=None,
+                top_name=top_name,
+                x=teg_x,
+                y=teg_y,
+                tile_index=teg_tile_index,
+                row=teg_row,
+                col=teg_col,
                 manifest=None,
             )
         )
 
-    # Users
+        start_user_index = 1
+
+    # ----------------------------
+    # 2. Users start from positions[start_user_index]
+    # ----------------------------
     for i, user in enumerate(users):
-        tile_index, row, col, x, y = positions[i]
+        tile_index, row, col, x, y = positions[start_user_index + i]
 
-        user_layout = load_layout(user.gds)
+        top_name = read_gds_into_layout(layout, user.gds)
+        user_cell = layout.cell(top_name)
 
-        if dbu is None:
-            dbu = user_layout.dbu
-            layout.dbu = dbu
+        if user_cell is None:
+            raise RuntimeError(f"Failed to load user top cell: {top_name}")
 
-        if abs(user_layout.dbu - dbu) > 1e-12:
-            raise RuntimeError(f"DBU mismatch: aggregate={dbu}, user={user_layout.dbu}, file={user.gds}")
-
-        user_top = get_single_top(user_layout, user.gds)
-        ensure_size_within_pitch(user_top, user_layout.dbu, config.pitch_x, config.pitch_y, user.gds)
-
-        copy_layout_tree(layout, user_layout)
-        copied_user = layout.cell(user_top.name)
-        if copied_user is None:
-            raise RuntimeError(f"Failed to copy user top cell: {user_top.name}")
-
-        insert_instance(top, copied_user, x, y, dbu)
+        ensure_size_within_pitch(layout, top_name, config.pitch_x, config.pitch_y, user.gds)
+        insert_instance(top, user_cell, x, y, layout.dbu)
 
         placements.append(
             make_placement(
                 entry_type="user",
                 github_id=user.github_id,
                 gds_file=user.gds,
-                top_name=copied_user.name,
+                top_name=top_name,
                 x=x,
                 y=y,
                 tile_index=tile_index,
@@ -183,37 +194,35 @@ def aggregate(config, users: list[UserEntry], positions, out_gds: Path):
             )
         )
 
-    # Fill
-    remain = len(positions) - len(users)
+    # ----------------------------
+    # 3. Fill remaining slots
+    # ----------------------------
+    fill_start = start_user_index + len(users)
+    remain = max_tiles - fill_start
+
     if remain > 0:
-        fill_layout = load_layout(config.fill_gds)
+        if not config.fill_gds:
+            raise RuntimeError("fillgds is required for remaining slots")
 
-        if dbu is None:
-            dbu = fill_layout.dbu
-            layout.dbu = dbu
+        fill_top_name = read_gds_into_layout(layout, config.fill_gds)
+        fill_cell = layout.cell(fill_top_name)
 
-        if abs(fill_layout.dbu - dbu) > 1e-12:
-            raise RuntimeError(f"DBU mismatch: aggregate={dbu}, fill={fill_layout.dbu}, file={config.fill_gds}")
+        if fill_cell is None:
+            raise RuntimeError(f"Failed to load fill top cell: {fill_top_name}")
 
-        fill_top = get_single_top(fill_layout, config.fill_gds)
-        ensure_size_within_pitch(fill_top, fill_layout.dbu, config.pitch_x, config.pitch_y, config.fill_gds)
-
-        copy_layout_tree(layout, fill_layout)
-        copied_fill = layout.cell(fill_top.name)
-        if copied_fill is None:
-            raise RuntimeError(f"Failed to copy fill top cell: {fill_top.name}")
+        ensure_size_within_pitch(layout, fill_top_name, config.pitch_x, config.pitch_y, config.fill_gds)
 
         for j in range(remain):
-            tile_index, row, col, x, y = positions[len(users) + j]
+            tile_index, row, col, x, y = positions[fill_start + j]
 
-            insert_instance(top, copied_fill, x, y, dbu)
+            insert_instance(top, fill_cell, x, y, layout.dbu)
 
             placements.append(
                 make_placement(
                     entry_type="fill",
                     github_id=SYSTEM_FILL_DIRNAME,
                     gds_file=config.fill_gds,
-                    top_name=copied_fill.name,
+                    top_name=fill_top_name,
                     x=x,
                     y=y,
                     tile_index=tile_index,
