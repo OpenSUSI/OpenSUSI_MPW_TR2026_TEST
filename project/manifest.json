@@ -29,15 +29,15 @@
       "type": "user",
       "githubId": "jun1okamura",
       "gdsFile": "users/jun1okamura/GDSII_MDP.gds",
-      "gdsTopCell": "tr_1um_jun1okamura_tk_1um_test2",
+      "gdsTopCell": "tr_1um_jun1okamura_tr_1um_test",
       "x": -6250.0,
       "y": 8750.0,
       "tileIndex": 1,
       "row": 0,
       "col": 1,
       "orderId": "6ab4c45d-800a-4bdc-b8e4-889ff2ed7a79",
-      "sourceRepo": "jun1okamura/TK-1um_test2",
-      "sourceRunId": "23516702275",
+      "sourceRepo": "jun1okamura/TR-1um_TEST",
+      "sourceRunId": "23395054347",
       "sourceArtifactName": "GDSII_MDP"
     },
     {
