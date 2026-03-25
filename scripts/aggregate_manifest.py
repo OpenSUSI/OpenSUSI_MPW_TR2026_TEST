@@ -13,6 +13,7 @@ import json
 class Placement:
     type: str
     githubId: str
+    normalizedRepoName: Optional[str] = None
     gdsFile: str
     gdsTopCell: str
     x: float
@@ -24,7 +25,6 @@ class Placement:
     sourceRepo: Optional[str] = None
     sourceRunId: Optional[str] = None
     sourceArtifactName: Optional[str] = None
-
 
 def write_manifest(path: Path, config, placements: list[Placement], output_gds: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
