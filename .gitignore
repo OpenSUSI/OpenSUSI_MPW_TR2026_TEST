@@ -1,5 +1,7 @@
 .gitignore
 .DS_Store
+USERS.md
+USERS.svg
 script/__pycache__
 # ------------------------
 # Generated outputs
