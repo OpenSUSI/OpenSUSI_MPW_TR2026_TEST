@@ -76,10 +76,10 @@ jobs:
           git config user.name "opensusi-bot"
           git config user.email "bot@opensusi.org"
 
-          git add project/manifest.json
-          git add project/ALL_GDSII_MDP.gds
-          git add USERS.md
-          git add USERS.svg
+          git add -f project/manifest.json
+          git add -f project/ALL_GDSII_MDP.gds
+          git add -f USERS.md
+          git add -f USERS.svg
 
           git commit -m "Update aggregated layout and user views" || echo "No changes"
           git push

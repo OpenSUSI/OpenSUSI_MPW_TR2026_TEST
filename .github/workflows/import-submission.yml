@@ -143,7 +143,8 @@ jobs:
           git config user.name "opensusi-bot"
           git config user.email "bot@opensusi.org"
 
-          git add "${{ inputs.target_dir }}"
+          git add -f "${{ inputs.target_dir }}/GDSII_MDP.gds"
+          git add -f "${{ inputs.target_dir }}/manifest.json"
           git commit -m "Import ${{ inputs.github_id }}" || echo "No changes"
           git push
 
