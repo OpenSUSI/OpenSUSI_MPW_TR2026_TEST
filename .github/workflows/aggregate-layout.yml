@@ -48,7 +48,7 @@ jobs:
           python3 scripts/aggregate_submission.py \
             --info-yaml info.yaml \
             --users-dir users \
-            --output-gds project/MDP_GDSII_ALL.gds \
+            --output-gds project/ALL_GDSII_MDP.gds \
             --output-manifest project/manifest.json
 
       - name: Generate USERS.md
@@ -77,7 +77,7 @@ jobs:
           git config user.email "bot@opensusi.org"
 
           git add project/manifest.json
-          git add project/MDP_GDSII_ALL.gds
+          git add project/ALL_GDSII_MDP.gds
           git add USERS.md
           git add USERS.svg
 
