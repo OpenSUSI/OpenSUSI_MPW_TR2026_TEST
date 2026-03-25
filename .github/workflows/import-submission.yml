@@ -1,8 +1,8 @@
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
-# OpenSUSI jun1okamura <jun1okamura@gmail.com>  
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+# OpenSUSI jun1okamura <jun1okamura@gmail.com>
 # LICENSE: Apache License Version 2.0, January 2004,
 #          http://www.apache.org/licenses/
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
 name: Import Submission
 
 on:
@@ -43,11 +43,9 @@ jobs:
 
     permissions:
       contents: write
+      actions: write
 
     steps:
-      - name: Checkout target repository
-        uses: actions/checkout@v4
-
       - name: Create GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -55,6 +53,12 @@ jobs:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: OpenSUSI
+
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
 
       - name: Log inputs
         run: |
@@ -95,11 +99,13 @@ jobs:
 
           curl -fsSL \
             -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
             "${ZIP_API}" \
             -o work/submission.zip
 
       - name: Unzip
         run: |
+          set -euo pipefail
           mkdir -p work/unpacked
           unzip -o work/submission.zip -d work/unpacked
 
@@ -112,6 +118,11 @@ jobs:
           mkdir -p "${TARGET_DIR}"
 
           GDS_FILE=$(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \) | head -n 1)
+
+          if [ -z "${GDS_FILE}" ]; then
+            echo "No GDS file found in artifact ZIP"
+            exit 1
+          fi
 
           cp "${GDS_FILE}" "${TARGET_DIR}/GDSII_MDP.gds"
 
@@ -127,9 +138,24 @@ jobs:
 
       - name: Commit
         run: |
+          set -euo pipefail
+
           git config user.name "opensusi-bot"
           git config user.email "bot@opensusi.org"
 
           git add "${{ inputs.target_dir }}"
           git commit -m "Import ${{ inputs.github_id }}" || echo "No changes"
           git push
+
+      - name: Trigger aggregate workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/aggregate-layout.yml/dispatches" \
+            -d '{"ref":"main"}'
