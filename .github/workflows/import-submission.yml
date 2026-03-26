@@ -1,7 +1,6 @@
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
 # OpenSUSI jun1okamura <jun1okamura@gmail.com>
-# LICENSE: Apache License Version 2.0, January 2004,
-#          http://www.apache.org/licenses/
+# LICENSE: Apache License Version 2.0
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
 name: Import Submission
 
@@ -41,6 +40,9 @@ jobs:
       actions: write
 
     steps:
+      # -------------------------------
+      # GitHub App Token
+      # -------------------------------
       - name: Create GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -49,10 +51,18 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: OpenSUSI
 
-      - uses: actions/checkout@v4
+      # -------------------------------
+      # Checkout (重要: fetch-depth 0)
+      # -------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
 
+      # -------------------------------
+      # Python Setup
+      # -------------------------------
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -63,6 +73,9 @@ jobs:
           set -euo pipefail
           pip install klayout
 
+      # -------------------------------
+      # Path計算
+      # -------------------------------
       - name: Compute paths
         id: vars
         run: |
@@ -74,6 +87,9 @@ jobs:
           echo "short_order_id=${SHORT_ORDER_ID}" >> "$GITHUB_OUTPUT"
           echo "target_dir=${TARGET_DIR}" >> "$GITHUB_OUTPUT"
 
+      # -------------------------------
+      # Artifact取得
+      # -------------------------------
       - name: Download artifact
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -100,6 +116,9 @@ jobs:
             "https://api.github.com/repos/${SOURCE_REPO}/actions/artifacts/${ARTIFACT_ID}/zip" \
             -o work/submission.zip
 
+      # -------------------------------
+      # GDS展開
+      # -------------------------------
       - name: Extract GDS
         env:
           TARGET_DIR: ${{ steps.vars.outputs.target_dir }}
@@ -118,6 +137,9 @@ jobs:
 
           cp "${GDS_FILES[0]}" "${TARGET_DIR}/GDSII_MDP.gds"
 
+      # -------------------------------
+      # ⭐ Top Cell Rename（重要）
+      # -------------------------------
       - name: Rename top cell
         run: |
           set -euo pipefail
@@ -127,6 +149,9 @@ jobs:
             --github-id "${{ inputs.github_id }}" \
             --source-repo "${{ inputs.source_repo }}"
 
+      # -------------------------------
+      # Manifest生成
+      # -------------------------------
       - name: Write manifest
         run: |
           set -euo pipefail
@@ -139,7 +164,10 @@ jobs:
             --source-run-id "${{ inputs.source_run_id }}" \
             --source-artifact-name "${{ inputs.source_artifact_name }}"
 
-      - name: Commit
+      # -------------------------------
+      # ⭐ Commit & Push（修正版）
+      # -------------------------------
+      - name: Commit and push
         run: |
           set -euo pipefail
 
@@ -154,8 +182,13 @@ jobs:
             exit 0
           }
 
-          git push
+          # ⭐ これが今回の修正ポイント
+          git pull --rebase origin main
+          git push origin HEAD:main
 
+      # -------------------------------
+      # Aggregate Trigger
+      # -------------------------------
       - name: Trigger aggregate
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
