@@ -3,7 +3,7 @@
 # LICENSE: Apache License Version 2.0, January 2004,
 #          http://www.apache.org/licenses/
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 import json
@@ -21,10 +21,12 @@ class Placement:
     row: Optional[int]
     col: Optional[int]
     normalizedRepoName: Optional[str] = None
+    shortOrderId: Optional[str] = None
     orderId: Optional[str] = None
     sourceRepo: Optional[str] = None
     sourceRunId: Optional[str] = None
     sourceArtifactName: Optional[str] = None
+
 
 def write_manifest(path: Path, config, placements: list[Placement], output_gds: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

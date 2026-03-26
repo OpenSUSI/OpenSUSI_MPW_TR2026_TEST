@@ -13,28 +13,22 @@ on:
   workflow_dispatch:
     inputs:
       order_id:
-        description: "OpenSUSI order ID"
         required: true
         type: string
       github_id:
-        description: "GitHub owner/user name"
         required: true
         type: string
       source_repo:
-        description: "Source repository in owner/repo format"
         required: true
         type: string
       source_run_id:
-        description: "GitHub Actions workflow run ID"
         required: true
         type: string
       source_artifact_name:
-        description: "Artifact name to import"
         required: true
         default: "GDSII_MDP"
         type: string
       target_dir:
-        description: "Destination directory in this repo"
         required: true
         type: string
 
@@ -58,22 +52,11 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: OpenSUSI
 
-      - name: Checkout target repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: true
 
-      - name: Log inputs
-        run: |
-          echo "order_id=${{ inputs.order_id }}"
-          echo "github_id=${{ inputs.github_id }}"
-          echo "source_repo=${{ inputs.source_repo }}"
-          echo "source_run_id=${{ inputs.source_run_id }}"
-          echo "source_artifact_name=${{ inputs.source_artifact_name }}"
-          echo "target_dir=${{ inputs.target_dir }}"
-
-      - name: Download artifact ZIP
+      - name: Download artifact
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SOURCE_REPO: ${{ inputs.source_repo }}
@@ -81,54 +64,41 @@ jobs:
           SOURCE_ARTIFACT_NAME: ${{ inputs.source_artifact_name }}
         run: |
           set -euo pipefail
-
           mkdir -p work
-
-          API_URL="https://api.github.com/repos/${SOURCE_REPO}/actions/runs/${SOURCE_RUN_ID}/artifacts"
 
           JSON=$(curl -fsSL \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "${API_URL}")
-
-          echo "$JSON" > work/artifacts.json
+            "https://api.github.com/repos/${SOURCE_REPO}/actions/runs/${SOURCE_RUN_ID}/artifacts")
 
           ARTIFACT_ID=$(python3 scripts/resolve_artifact_id.py \
-            --json-file work/artifacts.json \
+            --json-file <(echo "$JSON") \
             --artifact-name "${SOURCE_ARTIFACT_NAME}")
-
-          echo "artifact_id=${ARTIFACT_ID}"
-
-          ZIP_API="https://api.github.com/repos/${SOURCE_REPO}/actions/artifacts/${ARTIFACT_ID}/zip"
 
           curl -fsSL \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "${ZIP_API}" \
+            "https://api.github.com/repos/${SOURCE_REPO}/actions/artifacts/${ARTIFACT_ID}/zip" \
             -o work/submission.zip
 
-      - name: Unzip
-        run: |
-          set -euo pipefail
-          mkdir -p work/unpacked
-          unzip -o work/submission.zip -d work/unpacked
-
-      - name: Place GDS
+      - name: Extract GDS
         env:
           TARGET_DIR: ${{ inputs.target_dir }}
         run: |
           set -euo pipefail
 
+          unzip -o work/submission.zip -d work/unpacked
           mkdir -p "${TARGET_DIR}"
 
-          GDS_FILE=$(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \) | head -n 1)
+          GDS_FILE=$(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \))
 
-          if [ -z "${GDS_FILE}" ]; then
-            echo "No GDS file found in artifact ZIP"
+          COUNT=$(echo "$GDS_FILE" | wc -l)
+          if [ "$COUNT" -ne 1 ]; then
+            echo "Expected exactly one GDS file, found: $COUNT"
             exit 1
           fi
 
-          cp "${GDS_FILE}" "${TARGET_DIR}/GDSII_MDP.gds"
+          cp "$GDS_FILE" "${TARGET_DIR}/GDSII_MDP.gds"
 
       - name: Write manifest
         run: |
@@ -149,18 +119,16 @@ jobs:
 
           git add -f "${{ inputs.target_dir }}/GDSII_MDP.gds"
           git add -f "${{ inputs.target_dir }}/manifest.json"
-          git commit -m "Import ${{ inputs.github_id }}" || echo "No changes"
+
+          git commit -m "Import ${{ inputs.github_id }} (${{ inputs.order_id }})" || echo "No changes"
           git push
 
-      - name: Trigger aggregate workflow
+      - name: Trigger aggregate
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          set -euo pipefail
-
           curl -fsSL -X POST \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/aggregate-layout.yml/dispatches" \
             -d '{"ref":"main"}'

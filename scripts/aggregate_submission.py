@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
-# OpenSUSI jun1okamura <jun1okamura@gmail.com>  
-# LICENSE: Apache License Version 2.0, January 2004,
-#          http://www.apache.org/licenses/
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+# OpenSUSI jun1okamura <jun1okamura@gmail.com>
+# LICENSE: Apache License Version 2.0
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
 
 from pathlib import Path
 import argparse
@@ -26,7 +25,7 @@ DEFAULT_OUTPUT_GDS = Path("project/ALL_GDSII_MDP.gds")
 DEFAULT_OUTPUT_MANIFEST = Path("project/manifest.json")
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Aggregate user MDP GDS files into a single top GDS."
     )
@@ -35,38 +34,35 @@ def parse_args():
         "--info-yaml",
         type=Path,
         default=DEFAULT_INFO_YAML,
-        help=f"Path to info.yaml (default: {DEFAULT_INFO_YAML})"
+        help=f"Path to info.yaml (default: {DEFAULT_INFO_YAML})",
     )
-
     parser.add_argument(
         "--users-dir",
         type=Path,
         default=DEFAULT_USERS_DIR,
-        help=f"Path to users directory (default: {DEFAULT_USERS_DIR})"
+        help=f"Path to users directory (default: {DEFAULT_USERS_DIR})",
     )
-
     parser.add_argument(
         "--output-gds",
         type=Path,
         default=DEFAULT_OUTPUT_GDS,
-        help=f"Output aggregated GDS path (default: {DEFAULT_OUTPUT_GDS})"
+        help=f"Output aggregated GDS path (default: {DEFAULT_OUTPUT_GDS})",
     )
-
     parser.add_argument(
         "--output-manifest",
         type=Path,
         default=DEFAULT_OUTPUT_MANIFEST,
-        help=f"Output manifest path (default: {DEFAULT_OUTPUT_MANIFEST})"
+        help=f"Output manifest path (default: {DEFAULT_OUTPUT_MANIFEST})",
     )
 
     return parser.parse_args()
 
 
-def ensure_parent_dir(path: Path):
+def ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def main():
+def main() -> None:
     args = parse_args()
 
     ensure_parent_dir(args.output_gds)
@@ -79,21 +75,21 @@ def main():
         config.grid_x,
         config.grid_y,
         config.pitch_x,
-        config.pitch_y
+        config.pitch_y,
     )
 
     placements = aggregate(
         config=config,
         users=users,
         positions=positions,
-        out_gds=args.output_gds
+        out_gds=args.output_gds,
     )
 
     write_manifest(
         path=args.output_manifest,
         config=config,
         placements=placements,
-        output_gds=args.output_gds
+        output_gds=args.output_gds,
     )
 
     print("DONE")

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
-# OpenSUSI jun1okamura <jun1okamura@gmail.com>  
-# LICENSE: Apache License Version 2.0, January 2004,
-#          http://www.apache.org/licenses/
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
-#!/usr/bin/env python3
-
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+# OpenSUSI jun1okamura <jun1okamura@gmail.com>
+# LICENSE: Apache License Version 2.0
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
 import argparse
 import json
+import os
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -16,15 +14,29 @@ from typing import Any
 DEFAULT_MANIFEST = Path("project/manifest.json")
 DEFAULT_OUTPUT = Path("USERS.svg")
 
-DEFAULT_REPO_OWNER = "OpenSUSI"
-DEFAULT_REPO_NAME = "OpenSUSI_MPW_TR2026"
-DEFAULT_BRANCH = "main"
-
 TILE_W = 140
 TILE_H = 90
 MARGIN = 30
 HEADER_H = 40
 ROW_LABEL_W = 30
+
+
+def get_default_repo_owner() -> str:
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if "/" in repo:
+        return repo.split("/", 1)[0]
+    return "OpenSUSI"
+
+
+def get_default_repo_name() -> str:
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if "/" in repo:
+        return repo.split("/", 1)[1]
+    return "OpenSUSI_MPW_TR2026"
+
+
+def get_default_branch() -> str:
+    return os.environ.get("GITHUB_REF_NAME", "main")
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -34,8 +46,11 @@ def load_manifest(path: Path) -> dict[str, Any]:
 
 
 def filter_entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
-    entries = manifest.get("entries", [])
-    return [e for e in entries if e.get("type") in ("teg", "user", "fill")]
+    return [
+        entry
+        for entry in manifest.get("entries", [])
+        if entry.get("type") in {"teg", "user", "fill"}
+    ]
 
 
 def sort_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -49,18 +64,19 @@ def sort_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def repo_file_url(
-    github_id: str,
-    entry_type: str,
+    entry: dict[str, Any],
     repo_owner: str,
     repo_name: str,
     branch: str,
 ) -> str:
-    if entry_type == "teg":
-        rel = "users/00_system"
-    elif entry_type == "fill":
+    entry_type = entry.get("type", "")
+    github_id = entry.get("githubId", "-")
+    short_order_id = entry.get("shortOrderId", "")
+
+    if entry_type in {"teg", "fill"}:
         rel = "users/000_system"
     else:
-        rel = f"users/{github_id}"
+        rel = f"users/{github_id}/{short_order_id}"
 
     return f"https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{rel}"
 
@@ -118,14 +134,9 @@ def generate_svg(
             continue
         by_tile[(col, row)] = entry
 
-    parts: list[str] = []
-
-    parts.append(
+    parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
-    )
-
-    parts.append(
+        f'width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         """<style>
 text { font-family: Arial, sans-serif; fill: black; }
 .tile { fill: white; stroke: black; stroke-width: 1; }
@@ -137,14 +148,10 @@ text { font-family: Arial, sans-serif; fill: black; }
 .tile-title { font-size: 13px; font-weight: bold; }
 .tile-sub { font-size: 11px; }
 .tile-run { font-size: 10px; }
-</style>"""
-    )
+</style>""",
+        f'<text class="title" x="{MARGIN}" y="{MARGIN}">OpenSUSI MPW Users Layout</text>',
+    ]
 
-    parts.append(
-        f'<text class="title" x="{MARGIN}" y="{MARGIN}">OpenSUSI MPW Users Layout</text>'
-    )
-
-    # Column labels
     for col in range(grid_x):
         x, _ = tile_screen_xy(col, 0)
         parts.append(
@@ -152,7 +159,6 @@ text { font-family: Arial, sans-serif; fill: black; }
             f'text-anchor="middle">{col}</text>'
         )
 
-    # Row labels
     for row in range(grid_y):
         _, y = tile_screen_xy(0, row)
         parts.append(
@@ -160,7 +166,6 @@ text { font-family: Arial, sans-serif; fill: black; }
             f'text-anchor="end" dominant-baseline="middle">{row}</text>'
         )
 
-    # Tiles
     for row in range(grid_y):
         for col in range(grid_x):
             x, y = tile_screen_xy(col, row)
@@ -177,8 +182,7 @@ text { font-family: Arial, sans-serif; fill: black; }
                 continue
 
             entry_type = str(entry.get("type", ""))
-            github_id = str(entry.get("githubId", "-"))
-            href = repo_file_url(github_id, entry_type, repo_owner, repo_name, branch)
+            href = repo_file_url(entry, repo_owner, repo_name, branch)
             title, subtitle, run_id = entry_label(entry)
             css_class = css_class_for_entry(entry_type)
 
@@ -210,9 +214,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--repo-owner", default=DEFAULT_REPO_OWNER)
-    parser.add_argument("--repo-name", default=DEFAULT_REPO_NAME)
-    parser.add_argument("--branch", default=DEFAULT_BRANCH)
+    parser.add_argument("--repo-owner", default=get_default_repo_owner())
+    parser.add_argument("--repo-name", default=get_default_repo_name())
+    parser.add_argument("--branch", default=get_default_branch())
     return parser.parse_args()
 
 
@@ -231,6 +235,8 @@ def main() -> None:
 
     print(f"manifest : {args.manifest}")
     print(f"output   : {args.output}")
+    print(f"repo     : {args.repo_owner}/{args.repo_name}")
+    print(f"branch   : {args.branch}")
     print("DONE")
 
 

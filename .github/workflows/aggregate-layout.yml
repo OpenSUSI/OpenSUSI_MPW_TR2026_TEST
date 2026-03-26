@@ -15,8 +15,7 @@ on:
     paths:
       - "users/**"
       - "info.yaml"
-      - "scripts/aggregate_*.py"
-      - "scripts/generate_users_*.py"
+      - "scripts/**"
       - ".github/workflows/aggregate-layout.yml"
 
 env:
@@ -30,39 +29,31 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Python packages
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install pyyaml klayout
+      - name: Install dependencies
+        run: pip install pyyaml klayout
 
-      - name: Prepare output directory
+      - name: Aggregate
         run: |
           mkdir -p project
 
-      - name: Aggregate GDS
-        run: |
           python3 scripts/aggregate_submission.py \
             --info-yaml info.yaml \
             --users-dir users \
             --output-gds project/ALL_GDSII_MDP.gds \
             --output-manifest project/manifest.json
 
-      - name: Generate USERS.md
+      - name: Generate views
         run: |
           python3 scripts/generate_users_md.py \
             --manifest project/manifest.json \
             --output USERS.md
 
-      - name: Generate USERS.svg
-        run: |
           python3 scripts/generate_users_svg.py \
             --manifest project/manifest.json \
             --output USERS.svg \
@@ -70,12 +61,7 @@ jobs:
             --repo-name "${{ github.event.repository.name }}" \
             --branch "${{ github.ref_name }}"
 
-      - name: Show generated files
-        run: |
-          ls -lh project || true
-          ls -lh USERS.md USERS.svg || true
-
-      - name: Commit and push generated files
+      - name: Commit
         run: |
           git config user.name "opensusi-bot"
           git config user.email "bot@opensusi.org"
@@ -85,5 +71,5 @@ jobs:
           git add -f USERS.md
           git add -f USERS.svg
 
-          git commit -m "Update aggregated layout and user views" || echo "No changes"
+          git commit -m "Update aggregated layout" || echo "No changes"
           git push

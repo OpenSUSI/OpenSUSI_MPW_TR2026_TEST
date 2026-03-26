@@ -1,16 +1,14 @@
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
 # OpenSUSI jun1okamura <jun1okamura@gmail.com>
-# LICENSE: Apache License Version 2.0, January 2004,
-#          http://www.apache.org/licenses/
+# LICENSE: Apache License Version 2.0
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import json
-import re
 
 
-SYSTEM_DIRS = {"00_system", "000_system"}
+SYSTEM_DIRS = {"000_system"}
 USER_GDS_FILENAME = "GDSII_MDP.gds"
 USER_MANIFEST_FILENAME = "manifest.json"
 
@@ -35,23 +33,32 @@ def normalize_string(value: Any) -> str:
     return str(value or "").strip()
 
 
-def normalize_repo_name(value: Any) -> str:
-    s = normalize_string(value).lower()
-    s = re.sub(r"[^a-z0-9._-]+", "_", s)
-    s = re.sub(r"_+", "_", s)
-    return s.strip("_")
-
-
 def extract_repo_name(source_repo: str) -> str:
     value = normalize_string(source_repo)
-    if not value:
-        return ""
-
     parts = value.split("/")
+
     if len(parts) >= 2 and parts[-1]:
         return parts[-1]
 
-    return value
+    return value or "unknown"
+
+
+def validate_manifest(manifest: dict, path: Path) -> None:
+    required = [
+        "orderId",
+        "shortOrderId",
+        "githubId",
+        "sourceRepo",
+        "normalizedRepoName",
+        "gdsTopCell",
+    ]
+
+    missing = [k for k in required if not manifest.get(k)]
+
+    if missing:
+        raise RuntimeError(
+            f"Invalid manifest: missing {missing}, path={path}"
+        )
 
 
 def collect_users(users_dir: Path) -> list[UserEntry]:
@@ -60,20 +67,17 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
 
     users: list[UserEntry] = []
 
-    # users/<githubId>/<normalizedRepoName>/
+    # users/<githubId>/<shortOrderId>/
     for github_dir in sorted(users_dir.iterdir(), key=lambda p: p.name):
-        if not github_dir.is_dir():
+        if not github_dir.is_dir() or github_dir.name in SYSTEM_DIRS:
             continue
 
-        if github_dir.name in SYSTEM_DIRS:
-            continue
-
-        for repo_dir in sorted(github_dir.iterdir(), key=lambda p: p.name):
-            if not repo_dir.is_dir():
+        for order_dir in sorted(github_dir.iterdir(), key=lambda p: p.name):
+            if not order_dir.is_dir():
                 continue
 
-            gds = repo_dir / USER_GDS_FILENAME
-            manifest_path = repo_dir / USER_MANIFEST_FILENAME
+            gds = order_dir / USER_GDS_FILENAME
+            manifest_path = order_dir / USER_MANIFEST_FILENAME
 
             if not gds.exists():
                 raise FileNotFoundError(f"GDS not found: {gds}")
@@ -82,15 +86,15 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
                 raise FileNotFoundError(f"manifest.json not found: {manifest_path}")
 
             manifest = load_json(manifest_path)
+            validate_manifest(manifest, manifest_path)
 
             github_id = normalize_string(manifest.get("githubId")) or github_dir.name
             source_repo = normalize_string(manifest.get("sourceRepo"))
-            repo_name = extract_repo_name(source_repo) or repo_dir.name
-            normalized_repo_name = (
-                normalize_string(manifest.get("normalizedRepoName"))
-                or normalize_repo_name(repo_name)
-                or repo_dir.name
-            )
+
+            repo_name = extract_repo_name(source_repo)
+            normalized_repo_name = normalize_string(
+                manifest.get("normalizedRepoName")
+            ) or repo_name
 
             users.append(
                 UserEntry(
