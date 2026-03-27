@@ -45,21 +45,21 @@
       "sourceArtifactName": "GDSII_MDP"
     },
     {
-      "type": "fill",
-      "githubId": "000_system",
-      "gdsFile": "users/000_system/GDSII_FILL.gds",
-      "gdsTopCell": "tr_1um_000_system",
+      "type": "user",
+      "githubId": "jun1okamura",
+      "gdsFile": "users/jun1okamura/e0f4eae33d/GDSII_MDP.gds",
+      "gdsTopCell": "tr_1um_jun1okamura_tr-1um_test",
       "x": -3750.0,
       "y": 8750.0,
       "tileIndex": 2,
       "row": 0,
       "col": 2,
-      "normalizedRepoName": null,
-      "shortOrderId": null,
-      "orderId": null,
-      "sourceRepo": null,
-      "sourceRunId": null,
-      "sourceArtifactName": null
+      "normalizedRepoName": "tr-1um_test",
+      "shortOrderId": "e0f4eae33d",
+      "orderId": "e0f4eae3-3d4a-4f62-b559-1b5774dc9c5f",
+      "sourceRepo": "jun1okamura/TR-1um_TEST",
+      "sourceRunId": "23395054347",
+      "sourceArtifactName": "GDSII_MDP"
     },
     {
       "type": "fill",
