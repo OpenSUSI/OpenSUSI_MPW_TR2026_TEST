@@ -6,8 +6,4 @@
 # B= position in tile (1-3, starting from top-left, clockwise)
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
 tiles:
-  "0,1": tokai_rika.gds
-  "0,2": sponsor_a.gds
-  "0,3": sponsor_b.gds
-
   "1,1": OpenSUSI_LOGO.gds
