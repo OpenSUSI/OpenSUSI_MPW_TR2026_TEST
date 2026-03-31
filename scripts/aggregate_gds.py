@@ -16,7 +16,6 @@ SYSTEM_TEG_DIRNAME = "000_system"
 SYSTEM_FILL_DIRNAME = "000_system"
 
 ASCII_CELL_PREFIX = "ASCII_"
-XY_CHAR_WIDTH_UM = 10.0
 XY_CHAR_SPACE_UM = 2.0
 XY_ALLOWED_SCALES = (1, 2, 3)
 
@@ -26,6 +25,16 @@ XY_ALLOWED_SCALES = (1, 2, 3)
 # ----------------------------
 def normalize_string(value: Any) -> str:
     return str(value or "").strip()
+
+
+def normalize_int(value: Any) -> Optional[int]:
+    text = normalize_string(value)
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
 
 
 def get_all_cell_names(layout: pya.Layout) -> set[str]:
@@ -132,7 +141,7 @@ def insert_instance(
 
 
 # ----------------------------
-# Logo helpers
+# Text helpers
 # ----------------------------
 def get_text_width_um(
     layout: pya.Layout,
@@ -143,16 +152,20 @@ def get_text_width_um(
     dbu = layout.dbu
     width = 0.0
 
-    for i, ch in enumerate(text):
+    for index, ch in enumerate(text):
         glyph = ascii_cells[ch]
         box = glyph.bbox()
         width += box.width() * dbu
 
-        if i != len(text) - 1:
+        if index != len(text) - 1:
             width += char_space_um
 
     return width
 
+
+# ----------------------------
+# Logo helpers
+# ----------------------------
 def load_logo_map(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -165,16 +178,33 @@ def load_logo_map(path: Path) -> dict[str, str]:
 
     normalized: dict[str, str] = {}
     for key, value in tiles.items():
-        tile_key = normalize_string(key)
+        map_key = normalize_string(key)
         file_name = normalize_string(value)
-        if tile_key and file_name:
-            normalized[tile_key] = file_name
+        if map_key and file_name:
+            normalized[map_key] = file_name
 
     return normalized
 
 
-def resolve_logo_path(config, logo_map: dict[str, str], row: int, col: int) -> Path:
-    key = f"{row},{col}"
+def get_tile_number(user: Any, tile_index: int) -> int:
+    """
+    logo_map.yaml の tile番号として使う値。
+    paymentSequence を優先し、無ければ tile_index を使う。
+    """
+    manifest = getattr(user, "manifest", None) or {}
+    payment_sequence = normalize_int(manifest.get("paymentSequence"))
+    if payment_sequence is not None:
+        return payment_sequence
+    return int(tile_index)
+
+
+def resolve_logo_path_for_position(
+    config,
+    logo_map: dict[str, str],
+    tile_number: int,
+    position_number: int,
+) -> Path:
+    key = f"{tile_number},{position_number}"
     filename = normalize_string(logo_map.get(key)) or normalize_string(config.logo_default)
     return Path(config.logo_dir) / filename
 
@@ -211,7 +241,7 @@ def get_or_load_logo_cell(
 
 
 # ----------------------------
-# XY text helpers
+# ASCII glyph helpers
 # ----------------------------
 def get_or_load_ascii_cells(
     layout: pya.Layout,
@@ -299,7 +329,7 @@ def choose_integer_scale_for_text(
     if not text:
         raise RuntimeError("Text is empty")
 
-    base_width_um = get_text_width_um(layout, ascii_cells, text)
+    base_width_um = get_text_width_um(layout, ascii_cells, text, char_space_um)
     base_height_um = get_max_glyph_height_um(layout, ascii_cells, text)
 
     valid_scales: list[int] = []
@@ -340,7 +370,6 @@ def create_xy_text_cell_from_gds(
     cell = layout.create_cell(final_name)
     dbu = layout.dbu
 
-    total_width_um = get_text_width_um(layout, ascii_cells, text, char_space_um) * scale
     cursor_x_um = 0.0
 
     for index, ch in enumerate(text):
@@ -355,7 +384,6 @@ def create_xy_text_cell_from_gds(
             int(round(cursor_x_um / dbu)),
             0,
         )
-
         cell.insert(pya.CellInstArray(glyph.cell_index(), trans))
 
         cursor_x_um += glyph_width_um * scale
@@ -450,6 +478,7 @@ def build_user_wrapper_cell(
     logo_map: dict[str, str],
     row: int,
     col: int,
+    tile_index: int,
     user: UserEntry,
     logo_cache: dict[str, pya.Cell],
     ascii_cells: dict[str, pya.Cell],
@@ -464,15 +493,18 @@ def build_user_wrapper_cell(
     insert_instance(wrapper, user_cell, 0.0, 0.0, dbu)
 
     # LOGO
-    logo_path = resolve_logo_path(config, logo_map, row, col)
-    logo_cell = get_or_load_logo_cell(layout, logo_path, logo_cache, config)
-
-    for x_um, y_um in config.logo_positions:
+    tile_number = get_tile_number(user, tile_index)
+    for position_number, (x_um, y_um) in enumerate(config.logo_positions, start=1):
+        logo_path = resolve_logo_path_for_position(
+            config=config,
+            logo_map=logo_map,
+            tile_number=tile_number,
+            position_number=position_number,
+        )
+        logo_cell = get_or_load_logo_cell(layout, logo_path, logo_cache, config)
         insert_instance(wrapper, logo_cell, x_um, y_um, dbu)
 
-    # ----------------------------
-    # Multi-line TEXT (完成版)
-    # ----------------------------
+    # Multi-line text block
     lines = get_xy_lines(config, row, col)
     line_pitch = float(getattr(config, "xy_line_pitch", 18.0))
 
@@ -482,16 +514,12 @@ def build_user_wrapper_cell(
     placed_bottom_y_um = 0.0
     line_specs = []
 
-    # 下から（3行目→2行目→1行目）
     for line_text in reversed(lines):
-
         chosen_cell = None
         chosen_scale = None
         chosen_height = None
 
         for scale in sorted(XY_ALLOWED_SCALES, reverse=True):
-
-            # 横幅チェック（glyph実寸ベース）
             base_width = get_text_width_um(layout, ascii_cells, line_text)
             if base_width * scale > bbox_x:
                 continue
@@ -508,7 +536,6 @@ def build_user_wrapper_cell(
             box = trial_cell.bbox()
             height_um = box.height() * dbu
 
-            # 縦方向bboxチェック
             if placed_bottom_y_um + height_um > bbox_y:
                 continue
 
@@ -517,7 +544,7 @@ def build_user_wrapper_cell(
             chosen_height = height_um
             break
 
-        if chosen_cell is None:
+        if chosen_cell is None or chosen_scale is None or chosen_height is None:
             raise RuntimeError(
                 f"Line does not fit: '{line_text}', bbox=({bbox_x}, {bbox_y})"
             )
@@ -529,13 +556,11 @@ def build_user_wrapper_cell(
             }
         )
 
-        # 非重なり保証（重要）
         placed_bottom_y_um += max(
             line_pitch * chosen_scale,
             chosen_height,
         )
 
-    # 配置
     for spec in line_specs:
         insert_instance(
             wrapper,
@@ -624,6 +649,7 @@ def aggregate(config, users, positions, out_gds: Path):
             logo_map=logo_map,
             row=row,
             col=col,
+            tile_index=tile_index,
             user=user,
             logo_cache=logo_cache,
             ascii_cells=ascii_cells,
