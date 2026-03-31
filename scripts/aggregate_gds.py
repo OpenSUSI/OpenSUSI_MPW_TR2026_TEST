@@ -54,8 +54,14 @@ def insert_instance(parent, child, x_um, y_um, dbu):
 def load_logo_map(path: Path):
     if not path.exists():
         return {}
+
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return data.get("tiles", {})
+    tiles = data.get("tiles") or {}
+
+    if not isinstance(tiles, dict):
+        raise RuntimeError(f"Invalid logo_map format: {path}")
+
+    return tiles
 
 
 def resolve_logo_path(config, logo_map, row, col):
@@ -64,14 +70,50 @@ def resolve_logo_path(config, logo_map, row, col):
     return Path(config.logo_dir) / filename
 
 
-def create_xy_text_cell(layout, text, layer, row, col, height=80.0):
-    l = layout.layer(pya.LayerInfo(layer[0], layer[1]))
-    cell = layout.create_cell(f"XY_{row}_{col}")
+def get_or_load_logo_cell(layout, logo_path, logo_cache):
+    key = str(logo_path)
 
-    text_shape = pya.Text(text, pya.Trans())
-    text_shape.size = height / layout.dbu
+    if key in logo_cache:
+        return logo_cache[key]
 
-    cell.shapes(l).insert(text_shape)
+    if not logo_path.exists():
+        raise RuntimeError(f"Logo GDS not found: {logo_path}")
+
+    before = {c.name for c in layout.top_cells()}
+    layout.read(str(logo_path))
+    logo_top = get_single_top_cell_name_after_read(layout, before, logo_path)
+    logo_cell = layout.cell(logo_top)
+
+    logo_cache[key] = logo_cell
+    return logo_cell
+
+
+def create_xy_text_pcell(layout, text, layer, mag=0.35):
+    """
+    Basic.TEXT PCell を生成する。
+    mag は文字倍率。BBOX 160x110 に収めるため小さめにする。
+    """
+    lib = pya.Library.library_by_name("Basic")
+    if lib is None:
+        raise RuntimeError("KLayout Basic library not found")
+
+    layer_info = pya.LayerInfo(layer[0], layer[1])
+
+    # Basic.TEXT PCell
+    # KLayout の Basic ライブラリ前提
+    cell = layout.create_cell(
+        "TEXT",
+        "Basic",
+        {
+            "text": text,
+            "layer": layer_info,
+            "mag": mag,
+        },
+    )
+
+    if cell is None:
+        raise RuntimeError("Failed to create Basic.TEXT PCell")
+
     return cell
 
 
@@ -84,6 +126,7 @@ def build_user_wrapper_cell(
     row,
     col,
     user,
+    logo_cache,
 ):
     short_id = (user.manifest or {}).get("shortOrderId", "unknown")
     wrapper_name = f"WRAP_{user_top_name}_{short_id}"
@@ -100,30 +143,16 @@ def build_user_wrapper_cell(
     # LOGO
     # ----------------------------
     logo_path = resolve_logo_path(config, logo_map, row, col)
+    logo_cell = get_or_load_logo_cell(layout, logo_path, logo_cache)
 
-    if logo_path.exists():
-        before = {c.name for c in layout.top_cells()}
-        layout.read(str(logo_path))
-        logo_top = get_single_top_cell_name_after_read(layout, before, logo_path)
-        logo_cell = layout.cell(logo_top)
-
-        for pos in config.logo_positions:
-            insert_instance(wrapper, logo_cell, pos[0], pos[1], dbu)
-    else:
-        print(f"[WARN] logo not found: {logo_path}")
+    for pos in config.logo_positions:
+        insert_instance(wrapper, logo_cell, pos[0], pos[1], dbu)
 
     # ----------------------------
-    # XY
+    # XY (Basic.TEXT PCell)
     # ----------------------------
     xy_text = config.xy_format.format(row=row, col=col)
-
-    xy_cell = create_xy_text_cell(
-        layout,
-        xy_text,
-        config.xy_layer,
-        row,
-        col,
-    )
+    xy_cell = create_xy_text_pcell(layout, xy_text, config.xy_layer, mag=0.35)
 
     insert_instance(wrapper, xy_cell, config.xy_pos[0], config.xy_pos[1], dbu)
 
@@ -158,6 +187,7 @@ def make_placement(
         tileIndex=tile_index,
         row=row,
         col=col,
+        paymentSequence=manifest.get("paymentSequence"),
         normalizedRepoName=manifest.get("normalizedRepoName"),
         shortOrderId=manifest.get("shortOrderId"),
         orderId=manifest.get("orderId"),
@@ -195,6 +225,7 @@ def aggregate(config, users, positions, out_gds: Path):
 
     top = layout.create_cell(config.top_cell)
     logo_map = load_logo_map(config.logo_map_path)
+    logo_cache = {}
 
     placements = []
     start_user_index = 0
@@ -234,7 +265,6 @@ def aggregate(config, users, positions, out_gds: Path):
 
         top_name = read_user_gds_into_layout(layout, user)
 
-        # ⭐ サイズチェック追加（重要）
         ensure_size_within_pitch(
             layout,
             top_name,
@@ -254,6 +284,7 @@ def aggregate(config, users, positions, out_gds: Path):
             row,
             col,
             user,
+            logo_cache,
         )
 
         insert_instance(top, wrapper, x, y, layout.dbu)
@@ -285,7 +316,6 @@ def aggregate(config, users, positions, out_gds: Path):
 
         for j in range(remain):
             tile_index, row, col, x, y = positions[fill_start + j]
-
             insert_instance(top, fill_cell, x, y, layout.dbu)
 
             placements.append(
