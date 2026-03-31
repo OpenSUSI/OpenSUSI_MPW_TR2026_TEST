@@ -340,23 +340,20 @@ def create_xy_text_cell_from_gds(
     cell = layout.create_cell(final_name)
     dbu = layout.dbu
 
+    total_width_um = get_text_width_um(layout, ascii_cells, text, char_space_um) * scale
     cursor_x_um = 0.0
 
     for index, ch in enumerate(text):
         glyph = ascii_cells[ch]
         box = glyph.bbox()
-
         glyph_width_um = box.width() * dbu
-
-        dx_um = cursor_x_um - (box.left * dbu * scale)
-        dy_um = -(box.bottom * dbu * scale)
 
         trans = pya.CplxTrans(
             scale,
             0,
             False,
-            int(round(dx_um / dbu)),
-            int(round(dy_um / dbu)),
+            int(round(cursor_x_um / dbu)),
+            0,
         )
 
         cell.insert(pya.CellInstArray(glyph.cell_index(), trans))

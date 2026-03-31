@@ -6,4 +6,5 @@
 # B= position in tile (1-3, starting from top-left, clockwise)
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
 tiles:
-  "1,1": OpenSUSI_LOGO.gds
+  "1,1": FFG_LOGO.gds
+  "1,2": OpenSUSI_LOGO.gds
