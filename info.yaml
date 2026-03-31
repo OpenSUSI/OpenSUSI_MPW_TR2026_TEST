@@ -1,19 +1,70 @@
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
-# OpenSUSI jun1okamura <jun1okamura@gmail.com>  
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+# OpenSUSI jun1okamura <jun1okamura@gmail.com>
 # LICENSE: Apache License Version 2.0, January 2004,
 #          http://www.apache.org/licenses/
-# ----- ------ ----- ----- ------ ----- ----- ------ ----- 
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
 # OpenSUSI TR-1um MPW project information
-#
+
+# ----------------------------
+# Aggregate configuration
+# ----------------------------
 aggregate:
-  # 集約後のTOPセル名
   top_cell: AGGREGATED_TOP
-  # Tile配置ピッチ (um)
-  pitch_x: 2500
-  pitch_y: 2500
-  # Tile数 (列 x 行)
-  xy: 8x8
-  # 原点(0,0)に配置するTEG GDS
+
+  pitch:
+    x: 2500.0
+    y: 2500.0
+
+  grid:
+    x: 8
+    y: 8
+
   teg_gds: users/000_system/GDSII_TEG.gds
-  # 空きスロットを埋めるFill GDS
-  fillgds: users/000_system/GDSII_FILL.gds
+  fill_gds: users/000_system/GDSII_FILL.gds
+
+# ----------------------------
+# Logo configuration
+# ----------------------------
+logo:
+  dir: logos
+  default: OpenSUSI_LOGO.gds
+
+  # expected logo bbox (centered origin)
+  bbox:
+    x: 160.0
+    y: 160.0
+
+  placements:
+    top_left:
+      x: -1040.0
+      y: 1040.0
+
+    top_right:
+      x: 1040.0
+      y: 1040.0
+
+    bottom_right:
+      x: 1040.0
+      y: -1040.0
+
+# ----------------------------
+# XY mark configuration
+# ----------------------------
+xy_mark:
+  layer: [13, 0]
+
+  # expected text bbox
+  bbox:
+    x: 160.0
+    y: 110.0
+
+  placement:
+    x: -1120.0
+    y: -920.0
+
+  format: "2026F:X{col}Y{row}"
+
+# ----------------------------
+# Tile-based logo map
+# ----------------------------
+logo_map: logo_map.yaml

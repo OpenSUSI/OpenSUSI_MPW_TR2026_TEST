@@ -1,0 +1,10 @@
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+# Tile-based logo mapping
+# ----- ------ ----- ----- ------ ----- ----- ------ -----
+tiles:
+
+#  "0,1": OpenSUSI_LOGO.gds
+#  "0,2": OpenSUSI_LOGO.gds
+#  "0,3": OpenSUSI_LOGO.gds
+#  "1,0": LOGO_FILE.gds
+

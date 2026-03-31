@@ -4,6 +4,7 @@
 # ----- ------ ----- ----- ------ ----- ----- ------ -----
 from pathlib import Path
 from typing import Optional
+import yaml
 
 import klayout.db as pya
 
@@ -18,31 +19,18 @@ SYSTEM_FILL_DIRNAME = "000_system"
 # ----------------------------
 # GDS utilities
 # ----------------------------
-def get_single_top_cell_name_after_read(
-    layout: pya.Layout, before_names: set[str], source: Path
-) -> str:
+def get_single_top_cell_name_after_read(layout, before_names, source):
     after_names = {cell.name for cell in layout.top_cells()}
     new_names = sorted(after_names - before_names)
 
     if len(new_names) != 1:
-        raise RuntimeError(
-            f"GDS must add exactly one top cell: {source}, added={new_names}"
-        )
+        raise RuntimeError(f"GDS must add exactly one top cell: {source}, added={new_names}")
 
     return new_names[0]
 
 
-def ensure_size_within_pitch(
-    layout: pya.Layout,
-    top_name: str,
-    pitch_x: float,
-    pitch_y: float,
-    source: Path,
-) -> None:
+def ensure_size_within_pitch(layout, top_name, pitch_x, pitch_y, source):
     cell = layout.cell(top_name)
-    if cell is None:
-        raise RuntimeError(f"Cell not found: {top_name}")
-
     box = cell.bbox()
     dbu = layout.dbu
 
@@ -51,20 +39,95 @@ def ensure_size_within_pitch(
 
     if width > pitch_x or height > pitch_y:
         raise RuntimeError(
-            f"GDS exceeds tile size: {source}, "
-            f"width={width}, height={height}, pitch=({pitch_x}, {pitch_y})"
+            f"GDS exceeds tile size: {source}, width={width}, height={height}"
         )
 
 
-def insert_instance(
-    parent: pya.Cell,
-    child: pya.Cell,
-    x_um: float,
-    y_um: float,
-    dbu: float,
-) -> None:
+def insert_instance(parent, child, x_um, y_um, dbu):
     trans = pya.Trans(pya.Point(int(round(x_um / dbu)), int(round(y_um / dbu))))
     parent.insert(pya.CellInstArray(child.cell_index(), trans))
+
+
+# ----------------------------
+# Logo / XY helpers
+# ----------------------------
+def load_logo_map(path: Path):
+    if not path.exists():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return data.get("tiles", {})
+
+
+def resolve_logo_path(config, logo_map, row, col):
+    key = f"{row},{col}"
+    filename = logo_map.get(key, config.logo_default)
+    return Path(config.logo_dir) / filename
+
+
+def create_xy_text_cell(layout, text, layer, row, col, height=80.0):
+    l = layout.layer(pya.LayerInfo(layer[0], layer[1]))
+    cell = layout.create_cell(f"XY_{row}_{col}")
+
+    text_shape = pya.Text(text, pya.Trans())
+    text_shape.size = height / layout.dbu
+
+    cell.shapes(l).insert(text_shape)
+    return cell
+
+
+def build_user_wrapper_cell(
+    layout,
+    user_cell,
+    user_top_name,
+    config,
+    logo_map,
+    row,
+    col,
+    user,
+):
+    short_id = (user.manifest or {}).get("shortOrderId", "unknown")
+    wrapper_name = f"WRAP_{user_top_name}_{short_id}"
+    wrapper = layout.create_cell(wrapper_name)
+
+    dbu = layout.dbu
+
+    # ----------------------------
+    # USER GDS
+    # ----------------------------
+    insert_instance(wrapper, user_cell, 0, 0, dbu)
+
+    # ----------------------------
+    # LOGO
+    # ----------------------------
+    logo_path = resolve_logo_path(config, logo_map, row, col)
+
+    if logo_path.exists():
+        before = {c.name for c in layout.top_cells()}
+        layout.read(str(logo_path))
+        logo_top = get_single_top_cell_name_after_read(layout, before, logo_path)
+        logo_cell = layout.cell(logo_top)
+
+        for pos in config.logo_positions:
+            insert_instance(wrapper, logo_cell, pos[0], pos[1], dbu)
+    else:
+        print(f"[WARN] logo not found: {logo_path}")
+
+    # ----------------------------
+    # XY
+    # ----------------------------
+    xy_text = config.xy_format.format(row=row, col=col)
+
+    xy_cell = create_xy_text_cell(
+        layout,
+        xy_text,
+        config.xy_layer,
+        row,
+        col,
+    )
+
+    insert_instance(wrapper, xy_cell, config.xy_pos[0], config.xy_pos[1], dbu)
+
+    return wrapper
 
 
 # ----------------------------
@@ -72,17 +135,17 @@ def insert_instance(
 # ----------------------------
 def make_placement(
     *,
-    entry_type: str,
-    github_id: str,
-    gds_file: Path,
-    top_name: str,
-    x: float,
-    y: float,
-    tile_index: int,
-    row: Optional[int],
-    col: Optional[int],
-    manifest: Optional[dict] = None,
-) -> Placement:
+    entry_type,
+    github_id,
+    gds_file,
+    top_name,
+    x,
+    y,
+    tile_index,
+    row,
+    col,
+    manifest=None,
+):
     manifest = manifest or {}
 
     return Placement(
@@ -107,23 +170,18 @@ def make_placement(
 # ----------------------------
 # GDS load
 # ----------------------------
-def read_gds_into_layout(layout: pya.Layout, gds_path: Path) -> str:
-    if not gds_path.exists():
-        raise FileNotFoundError(f"GDS not found: {gds_path}")
-
+def read_gds_into_layout(layout, gds_path):
     before = {cell.name for cell in layout.top_cells()}
     layout.read(str(gds_path))
     return get_single_top_cell_name_after_read(layout, before, gds_path)
 
 
-def read_user_gds_into_layout(layout: pya.Layout, user: UserEntry) -> str:
+def read_user_gds_into_layout(layout, user):
     top_name = read_gds_into_layout(layout, user.gds)
-
     expected = (user.manifest or {}).get("gdsTopCell")
+
     if expected and top_name != expected:
-        raise RuntimeError(
-            f"Top cell mismatch: expected={expected}, got={top_name}, source={user.gds}"
-        )
+        raise RuntimeError(f"Top mismatch: {expected} vs {top_name}")
 
     return top_name
 
@@ -131,38 +189,24 @@ def read_user_gds_into_layout(layout: pya.Layout, user: UserEntry) -> str:
 # ----------------------------
 # Aggregate
 # ----------------------------
-def aggregate(config, users: list[UserEntry], positions, out_gds: Path):
-    max_tiles = config.grid_x * config.grid_y
-    teg_slots = 1 if config.teg_gds else 0
-    available_user_slots = max_tiles - teg_slots
-
-    if len(users) > available_user_slots:
-        raise RuntimeError(
-            f"Too many users: {len(users)} > {available_user_slots}"
-        )
-
-    if len(users) < available_user_slots and not config.fill_gds:
-        raise RuntimeError("fillgds is required")
-
+def aggregate(config, users, positions, out_gds: Path):
     layout = pya.Layout()
     layout.dbu = 0.001
-    top = layout.create_cell(config.top_cell)
 
-    placements: list[Placement] = []
+    top = layout.create_cell(config.top_cell)
+    logo_map = load_logo_map(config.logo_map_path)
+
+    placements = []
     start_user_index = 0
 
     # ----------------------------
-    # TEG
+    # TEG（LOGO/XYなし）
     # ----------------------------
     if config.teg_gds:
         tile_index, row, col, x, y = positions[0]
 
         top_name = read_gds_into_layout(layout, config.teg_gds)
         cell = layout.cell(top_name)
-
-        ensure_size_within_pitch(
-            layout, top_name, config.pitch_x, config.pitch_y, config.teg_gds
-        )
 
         insert_instance(top, cell, x, y, layout.dbu)
 
@@ -183,19 +227,36 @@ def aggregate(config, users: list[UserEntry], positions, out_gds: Path):
         start_user_index = 1
 
     # ----------------------------
-    # USERS
+    # USERS（LOGO + XY）
     # ----------------------------
     for i, user in enumerate(users):
         tile_index, row, col, x, y = positions[start_user_index + i]
 
         top_name = read_user_gds_into_layout(layout, user)
-        cell = layout.cell(top_name)
 
+        # ⭐ サイズチェック追加（重要）
         ensure_size_within_pitch(
-            layout, top_name, config.pitch_x, config.pitch_y, user.gds
+            layout,
+            top_name,
+            config.pitch_x,
+            config.pitch_y,
+            user.gds,
         )
 
-        insert_instance(top, cell, x, y, layout.dbu)
+        user_cell = layout.cell(top_name)
+
+        wrapper = build_user_wrapper_cell(
+            layout,
+            user_cell,
+            top_name,
+            config,
+            logo_map,
+            row,
+            col,
+            user,
+        )
+
+        insert_instance(top, wrapper, x, y, layout.dbu)
 
         placements.append(
             make_placement(
@@ -213,21 +274,14 @@ def aggregate(config, users: list[UserEntry], positions, out_gds: Path):
         )
 
     # ----------------------------
-    # FILL
+    # FILL（LOGOなし）
     # ----------------------------
     fill_start = start_user_index + len(users)
-    remain = max_tiles - fill_start
+    remain = len(positions) - fill_start
 
     if remain > 0:
-        if not config.fill_gds:
-            raise RuntimeError("fillgds is required")
-
-        fill_top_name = read_gds_into_layout(layout, config.fill_gds)
-        fill_cell = layout.cell(fill_top_name)
-
-        ensure_size_within_pitch(
-            layout, fill_top_name, config.pitch_x, config.pitch_y, config.fill_gds
-        )
+        fill_top = read_gds_into_layout(layout, config.fill_gds)
+        fill_cell = layout.cell(fill_top)
 
         for j in range(remain):
             tile_index, row, col, x, y = positions[fill_start + j]
@@ -239,7 +293,7 @@ def aggregate(config, users: list[UserEntry], positions, out_gds: Path):
                     entry_type="fill",
                     github_id=SYSTEM_FILL_DIRNAME,
                     gds_file=config.fill_gds,
-                    top_name=fill_top_name,
+                    top_name=fill_top,
                     x=x,
                     y=y,
                     tile_index=tile_index,
