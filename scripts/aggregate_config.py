@@ -24,8 +24,10 @@ class AggregateConfig:
     logo_positions: list[tuple[float, float]]
 
     xy_layer: tuple[int, int]
+    xy_bbox: tuple[float, float]
     xy_pos: tuple[float, float]
     xy_format: str
+    xy_text_gds: Path
 
     logo_map_path: Path
 
@@ -57,14 +59,19 @@ def require_int(data: dict, key: str, section: str) -> int:
 
 
 def require_xy_pair(data: dict, section: str) -> tuple[float, float]:
+    if not isinstance(data, dict):
+        raise KeyError(f"Missing or invalid section: {section}")
+
     if "x" not in data or "y" not in data:
         raise KeyError(f"Missing required keys: {section}.x / {section}.y")
+
     return float(data["x"]), float(data["y"])
 
 
 def require_layer_pair(value, section: str) -> tuple[int, int]:
     if not isinstance(value, (list, tuple)) or len(value) != 2:
         raise ValueError(f"{section} must be [layer, datatype]")
+
     return int(value[0]), int(value[1])
 
 
@@ -83,6 +90,7 @@ def load_config(path: Path) -> AggregateConfig:
 
     logo_placements = require_section(logo, "placements")
     xy_placement = require_section(xy_mark, "placement")
+    xy_bbox = require_section(xy_mark, "bbox")
 
     top_cell = require_string(aggregate, "top_cell", "aggregate")
     pitch_x = require_float(aggregate_pitch, "x", "aggregate.pitch")
@@ -96,8 +104,14 @@ def load_config(path: Path) -> AggregateConfig:
     logo_dir = Path(require_string(logo, "dir", "logo"))
     logo_default = require_string(logo, "default", "logo")
 
-    top_left = require_xy_pair(logo_placements["top_left"], "logo.placements.top_left")
-    top_right = require_xy_pair(logo_placements["top_right"], "logo.placements.top_right")
+    top_left = require_xy_pair(
+        logo_placements["top_left"],
+        "logo.placements.top_left",
+    )
+    top_right = require_xy_pair(
+        logo_placements["top_right"],
+        "logo.placements.top_right",
+    )
     bottom_right = require_xy_pair(
         logo_placements["bottom_right"],
         "logo.placements.bottom_right",
@@ -105,10 +119,14 @@ def load_config(path: Path) -> AggregateConfig:
     logo_positions = [top_left, top_right, bottom_right]
 
     xy_layer = require_layer_pair(xy_mark.get("layer"), "xy_mark.layer")
+    xy_bbox_pair = require_xy_pair(xy_bbox, "xy_mark.bbox")
     xy_pos = require_xy_pair(xy_placement, "xy_mark.placement")
     xy_format = str(xy_mark.get("format", "X{col}Y{row}")).strip() or "X{col}Y{row}"
+    xy_text_gds = Path(require_string(xy_mark, "text_gds", "xy_mark"))
 
-    logo_map_path = Path(str(data.get("logo_map", "logo_map.yaml")).strip() or "logo_map.yaml")
+    logo_map_path = Path(
+        str(data.get("logo_map", "logo_map.yaml")).strip() or "logo_map.yaml"
+    )
 
     return AggregateConfig(
         top_cell=top_cell,
@@ -122,7 +140,9 @@ def load_config(path: Path) -> AggregateConfig:
         logo_default=logo_default,
         logo_positions=logo_positions,
         xy_layer=xy_layer,
+        xy_bbox=xy_bbox_pair,
         xy_pos=xy_pos,
         xy_format=xy_format,
+        xy_text_gds=xy_text_gds,
         logo_map_path=logo_map_path,
     )

@@ -19,7 +19,7 @@ aggregate:
     x: 8
     y: 8
 
-  teg_gds: users/000_system/GDSII_TEG.gds
+  teg_gds:  users/000_system/GDSII_TEG.gds
   fill_gds: users/000_system/GDSII_FILL.gds
 
 # ----------------------------
@@ -63,6 +63,9 @@ xy_mark:
     y: -920.0
 
   format: "2026F:X{col}Y{row}"
+
+  # glyph library GDS
+  text_gds: logos/NUMBERS.gds
 
 # ----------------------------
 # Tile-based logo map
