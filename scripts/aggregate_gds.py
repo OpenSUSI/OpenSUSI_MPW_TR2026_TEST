@@ -223,7 +223,6 @@ def get_or_load_ascii_cells(
         if not name.startswith(ASCII_CELL_PREFIX):
             continue
 
-        # この read で新しく入ったものを優先対象にする
         if name not in new_names and key not in text_cache:
             continue
 
@@ -248,7 +247,11 @@ def validate_ascii_cells_for_text(text: str, ascii_cells: dict[str, pya.Cell]) -
         raise RuntimeError(f"Missing glyph(s) for XY text: {missing}")
 
 
-def get_max_glyph_height_um(layout: pya.Layout, ascii_cells: dict[str, pya.Cell], text: str) -> float:
+def get_max_glyph_height_um(
+    layout: pya.Layout,
+    ascii_cells: dict[str, pya.Cell],
+    text: str,
+) -> float:
     dbu = layout.dbu
     max_height_um = 0.0
 
@@ -333,7 +336,6 @@ def create_xy_text_cell_from_gds(
         glyph = ascii_cells[ch]
         box = glyph.bbox()
 
-        # glyph の左下を原点寄せしてから配置
         dx_um = cursor_x_um - (box.left * dbu * scale)
         dy_um = -(box.bottom * dbu * scale)
 
@@ -357,6 +359,21 @@ def create_xy_text_cell_from_gds(
     )
 
     return cell
+
+
+def get_xy_lines(config, row: int, col: int) -> list[str]:
+    templates = getattr(config, "xy_lines", None) or [config.xy_format]
+    lines: list[str] = []
+
+    for template in templates:
+        text = normalize_string(template).format(row=row, col=col)
+        if text:
+            lines.append(text)
+
+    if not lines:
+        raise RuntimeError("No XY text lines generated")
+
+    return lines
 
 
 # ----------------------------
@@ -431,34 +448,39 @@ def build_user_wrapper_cell(
 
     dbu = layout.dbu
 
-    # ----------------------------
     # USER GDS
-    # ----------------------------
     insert_instance(wrapper, user_cell, 0.0, 0.0, dbu)
 
-    # ----------------------------
     # LOGO
-    # ----------------------------
     logo_path = resolve_logo_path(config, logo_map, row, col)
     logo_cell = get_or_load_logo_cell(layout, logo_path, logo_cache, config)
 
     for x_um, y_um in config.logo_positions:
         insert_instance(wrapper, logo_cell, x_um, y_um, dbu)
 
-    # ----------------------------
-    # XY (ASCII glyph GDS)
-    # ----------------------------
-    xy_text = config.xy_format.format(row=row, col=col)
+    # Multi-line XY / text block
+    lines = get_xy_lines(config, row, col)
+    line_pitch = float(getattr(config, "xy_line_pitch", 18.0))
+    total_lines = len(lines)
 
-    xy_cell = create_xy_text_cell_from_gds(
-        layout=layout,
-        text=xy_text,
-        ascii_cells=ascii_cells,
-        target_bbox_x=config.xy_bbox[0],
-        target_bbox_y=config.xy_bbox[1],
-    )
+    for index, line_text in enumerate(lines):
+        y_offset_um = (total_lines - 1 - index) * line_pitch
 
-    insert_instance(wrapper, xy_cell, config.xy_pos[0], config.xy_pos[1], dbu)
+        line_cell = create_xy_text_cell_from_gds(
+            layout=layout,
+            text=line_text,
+            ascii_cells=ascii_cells,
+            target_bbox_x=config.xy_bbox[0],
+            target_bbox_y=config.xy_bbox[1],
+        )
+
+        insert_instance(
+            wrapper,
+            line_cell,
+            config.xy_pos[0],
+            config.xy_pos[1] + y_offset_um,
+            dbu,
+        )
 
     return wrapper
 
@@ -485,9 +507,7 @@ def aggregate(config, users, positions, out_gds: Path):
     placements: list[Placement] = []
     start_user_index = 0
 
-    # ----------------------------
     # TEG（LOGO/XYなし）
-    # ----------------------------
     if config.teg_gds:
         tile_index, row, col, x, y = positions[0]
 
@@ -515,9 +535,7 @@ def aggregate(config, users, positions, out_gds: Path):
 
         start_user_index = 1
 
-    # ----------------------------
-    # USERS（LOGO + XY）
-    # ----------------------------
+    # USERS（LOGO + multi-line text）
     for index, user in enumerate(users):
         tile_index, row, col, x, y = positions[start_user_index + index]
 
@@ -565,9 +583,7 @@ def aggregate(config, users, positions, out_gds: Path):
             )
         )
 
-    # ----------------------------
     # FILL（LOGO/XYなし）
-    # ----------------------------
     fill_start = start_user_index + len(users)
     remain = len(positions) - fill_start
 

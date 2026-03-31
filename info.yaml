@@ -53,19 +53,24 @@ logo:
 xy_mark:
   layer: [13, 0]
 
-  # expected text bbox
   bbox:
     x: 160.0
     y: 110.0
 
   placement:
     x: -1120.0
-    y: -920.0
+    y: -900.0
 
-  format: "2026F:X{col}Y{row}"
+  text_gds: logos/NUMBERS.gds
+
+  line_pitch: 18.0
+
+  lines:
+    - "OPENSUSI"
+    - "2026-F"
+    - "X{col}-Y{row}"
 
   # glyph library GDS
-  text_gds: logos/NUMBERS.gds
 
 # ----------------------------
 # Tile-based logo map

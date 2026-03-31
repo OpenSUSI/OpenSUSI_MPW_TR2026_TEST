@@ -27,6 +27,8 @@ class AggregateConfig:
     xy_bbox: tuple[float, float]
     xy_pos: tuple[float, float]
     xy_format: str
+    xy_lines: list[str]
+    xy_line_pitch: float
     xy_text_gds: Path
 
     logo_map_path: Path
@@ -75,6 +77,25 @@ def require_layer_pair(value, section: str) -> tuple[int, int]:
     return int(value[0]), int(value[1])
 
 
+def normalize_lines(value, fallback: str) -> list[str]:
+    if value is None:
+        return [fallback]
+
+    if not isinstance(value, list):
+        raise ValueError("xy_mark.lines must be a list of strings")
+
+    lines: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text:
+            lines.append(text)
+
+    if not lines:
+        return [fallback]
+
+    return lines
+
+
 def load_config(path: Path) -> AggregateConfig:
     if not path.exists():
         raise FileNotFoundError(f"info.yaml not found: {path}")
@@ -121,7 +142,11 @@ def load_config(path: Path) -> AggregateConfig:
     xy_layer = require_layer_pair(xy_mark.get("layer"), "xy_mark.layer")
     xy_bbox_pair = require_xy_pair(xy_bbox, "xy_mark.bbox")
     xy_pos = require_xy_pair(xy_placement, "xy_mark.placement")
+
     xy_format = str(xy_mark.get("format", "X{col}Y{row}")).strip() or "X{col}Y{row}"
+    xy_lines = normalize_lines(xy_mark.get("lines"), xy_format)
+    xy_line_pitch = float(xy_mark.get("line_pitch", 18.0))
+
     xy_text_gds = Path(require_string(xy_mark, "text_gds", "xy_mark"))
 
     logo_map_path = Path(
@@ -143,6 +168,8 @@ def load_config(path: Path) -> AggregateConfig:
         xy_bbox=xy_bbox_pair,
         xy_pos=xy_pos,
         xy_format=xy_format,
+        xy_lines=xy_lines,
+        xy_line_pitch=xy_line_pitch,
         xy_text_gds=xy_text_gds,
         logo_map_path=logo_map_path,
     )
