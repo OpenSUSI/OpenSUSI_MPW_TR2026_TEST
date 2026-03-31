@@ -12,32 +12,36 @@ from pathlib import Path
 
 
 def normalize_name(value: str) -> str:
-    s = str(value or "").strip().lower()
-    s = re.sub(r"[^a-z0-9._-]+", "_", s)
-    s = re.sub(r"_+", "_", s)
-    return s.strip("_")
+    text = str(value or "").strip().lower()
+    text = re.sub(r"[^a-z0-9._-]+", "_", text)
+    text = re.sub(r"_+", "_", text)
+    return text.strip("_")
 
 
 def extract_repo_name(source_repo: str) -> str:
     value = str(source_repo or "").strip()
     parts = value.split("/")
+
     if len(parts) >= 2 and parts[-1]:
         return parts[-1]
+
     return value or "unknown"
 
 
 def make_short_order_id(order_id: str) -> str:
-    return str(order_id).replace("-", "")[:10]
+    return str(order_id or "").replace("-", "")[:10]
 
 
 def build_top_cell_name(github_id: str, repo_name: str) -> str:
-    gid = normalize_name(github_id)
-    repo = normalize_name(repo_name)
-    return f"tr_1um_{gid}_{repo}"[:64]
+    normalized_github_id = normalize_name(github_id)
+    normalized_repo_name = normalize_name(repo_name)
+    return f"tr_1um_{normalized_github_id}_{normalized_repo_name}"[:64]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Write import manifest.json for an imported submission."
+    )
 
     parser.add_argument("--target-dir", required=True)
     parser.add_argument("--order-id", required=True)
@@ -45,6 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-repo", required=True)
     parser.add_argument("--source-run-id", required=True)
     parser.add_argument("--source-artifact-name", required=True)
+    parser.add_argument("--payment-sequence", required=True, type=int)
 
     return parser.parse_args()
 
@@ -61,18 +66,20 @@ def main() -> None:
     gds_top_cell = build_top_cell_name(args.github_id, repo_name)
 
     manifest = {
-        "orderId": args.order_id,
+        "orderId": str(args.order_id),
         "shortOrderId": short_order_id,
-        "githubId": args.github_id,
-        "sourceRepo": args.source_repo,
+        "paymentSequence": int(args.payment_sequence),
+        "githubId": str(args.github_id),
+        "sourceRepo": str(args.source_repo),
         "normalizedRepoName": normalized_repo_name,
         "gdsTopCell": gds_top_cell,
-        "sourceRunId": args.source_run_id,
-        "sourceArtifactName": args.source_artifact_name,
+        "sourceRunId": str(args.source_run_id),
+        "sourceArtifactName": str(args.source_artifact_name),
     }
 
-    (target_dir / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False),
+    manifest_path = target_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 

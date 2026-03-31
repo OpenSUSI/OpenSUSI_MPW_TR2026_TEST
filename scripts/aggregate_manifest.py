@@ -20,6 +20,7 @@ class Placement:
     tileIndex: int
     row: Optional[int]
     col: Optional[int]
+    paymentSequence: Optional[int] = None
     normalizedRepoName: Optional[str] = None
     shortOrderId: Optional[str] = None
     orderId: Optional[str] = None
@@ -28,7 +29,12 @@ class Placement:
     sourceArtifactName: Optional[str] = None
 
 
-def write_manifest(path: Path, config, placements: list[Placement], output_gds: Path) -> None:
+def write_manifest(
+    path: Path,
+    config,
+    placements: list[Placement],
+    output_gds: Path,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     data = {
@@ -42,10 +48,10 @@ def write_manifest(path: Path, config, placements: list[Placement], output_gds: 
             "x": config.grid_x,
             "y": config.grid_y,
         },
-        "entries": [asdict(p) for p in placements],
+        "entries": [asdict(placement) for placement in placements],
     }
 
     path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )

@@ -18,6 +18,7 @@ class UserEntry:
     github_id: str
     repo_name: str
     normalized_repo_name: str
+    payment_sequence: int
     gds: Path
     manifest_path: Path
     manifest: dict[str, Any]
@@ -33,6 +34,18 @@ def normalize_string(value: Any) -> str:
     return str(value or "").strip()
 
 
+def normalize_int(value: Any) -> int:
+    text = normalize_string(value)
+
+    if not text:
+        return 0
+
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid integer value: {value}") from exc
+
+
 def extract_repo_name(source_repo: str) -> str:
     value = normalize_string(source_repo)
     parts = value.split("/")
@@ -43,21 +56,26 @@ def extract_repo_name(source_repo: str) -> str:
     return value or "unknown"
 
 
-def validate_manifest(manifest: dict, path: Path) -> None:
+def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
     required = [
         "orderId",
         "shortOrderId",
+        "paymentSequence",
         "githubId",
         "sourceRepo",
         "normalizedRepoName",
         "gdsTopCell",
     ]
 
-    missing = [k for k in required if not manifest.get(k)]
+    missing = [key for key in required if manifest.get(key) in (None, "", [])]
 
     if missing:
+        raise RuntimeError(f"Invalid manifest: missing {missing}, path={path}")
+
+    payment_sequence = normalize_int(manifest.get("paymentSequence"))
+    if payment_sequence <= 0:
         raise RuntimeError(
-            f"Invalid manifest: missing {missing}, path={path}"
+            f"Invalid manifest: paymentSequence must be > 0, path={path}"
         )
 
 
@@ -68,11 +86,11 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
     users: list[UserEntry] = []
 
     # users/<githubId>/<shortOrderId>/
-    for github_dir in sorted(users_dir.iterdir(), key=lambda p: p.name):
+    for github_dir in sorted(users_dir.iterdir(), key=lambda path: path.name):
         if not github_dir.is_dir() or github_dir.name in SYSTEM_DIRS:
             continue
 
-        for order_dir in sorted(github_dir.iterdir(), key=lambda p: p.name):
+        for order_dir in sorted(github_dir.iterdir(), key=lambda path: path.name):
             if not order_dir.is_dir():
                 continue
 
@@ -90,17 +108,18 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
 
             github_id = normalize_string(manifest.get("githubId")) or github_dir.name
             source_repo = normalize_string(manifest.get("sourceRepo"))
-
             repo_name = extract_repo_name(source_repo)
-            normalized_repo_name = normalize_string(
-                manifest.get("normalizedRepoName")
-            ) or repo_name
+            normalized_repo_name = (
+                normalize_string(manifest.get("normalizedRepoName")) or repo_name
+            )
+            payment_sequence = normalize_int(manifest.get("paymentSequence"))
 
             users.append(
                 UserEntry(
                     github_id=github_id,
                     repo_name=repo_name,
                     normalized_repo_name=normalized_repo_name,
+                    payment_sequence=payment_sequence,
                     gds=gds,
                     manifest_path=manifest_path,
                     manifest=manifest,
