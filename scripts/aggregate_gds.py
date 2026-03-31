@@ -134,6 +134,25 @@ def insert_instance(
 # ----------------------------
 # Logo helpers
 # ----------------------------
+def get_text_width_um(
+    layout: pya.Layout,
+    ascii_cells: dict[str, pya.Cell],
+    text: str,
+    char_space_um: float = XY_CHAR_SPACE_UM,
+) -> float:
+    dbu = layout.dbu
+    width = 0.0
+
+    for i, ch in enumerate(text):
+        glyph = ascii_cells[ch]
+        box = glyph.bbox()
+        width += box.width() * dbu
+
+        if i != len(text) - 1:
+            width += char_space_um
+
+    return width
+
 def load_logo_map(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -274,15 +293,13 @@ def choose_integer_scale_for_text(
     ascii_cells: dict[str, pya.Cell],
     target_bbox_x: float,
     target_bbox_y: float,
-    char_width_um: float = XY_CHAR_WIDTH_UM,
     char_space_um: float = XY_CHAR_SPACE_UM,
     allowed_scales: tuple[int, ...] = XY_ALLOWED_SCALES,
 ) -> int:
-    n = len(text)
-    if n <= 0:
-        raise RuntimeError("XY text is empty")
+    if not text:
+        raise RuntimeError("Text is empty")
 
-    base_width_um = char_width_um * n + char_space_um * max(0, n - 1)
+    base_width_um = get_text_width_um(layout, ascii_cells, text)
     base_height_um = get_max_glyph_height_um(layout, ascii_cells, text)
 
     valid_scales: list[int] = []
@@ -296,8 +313,8 @@ def choose_integer_scale_for_text(
 
     if not valid_scales:
         raise RuntimeError(
-            f"XY text does not fit bbox with integer scales {allowed_scales}: "
-            f"text='{text}', bbox=({target_bbox_x}, {target_bbox_y}), "
+            f"Text does not fit bbox: text='{text}', "
+            f"bbox=({target_bbox_x}, {target_bbox_y}), "
             f"base=({base_width_um}, {base_height_um})"
         )
 
@@ -310,31 +327,26 @@ def create_xy_text_cell_from_gds(
     ascii_cells: dict[str, pya.Cell],
     target_bbox_x: float,
     target_bbox_y: float,
-    char_width_um: float = XY_CHAR_WIDTH_UM,
     char_space_um: float = XY_CHAR_SPACE_UM,
+    forced_scale: int = 1,
 ) -> pya.Cell:
     validate_ascii_cells_for_text(text, ascii_cells)
 
-    scale = choose_integer_scale_for_text(
-        layout=layout,
-        text=text,
-        ascii_cells=ascii_cells,
-        target_bbox_x=target_bbox_x,
-        target_bbox_y=target_bbox_y,
-        char_width_um=char_width_um,
-        char_space_um=char_space_um,
-    )
+    scale = int(forced_scale)
+    if scale <= 0:
+        raise RuntimeError(f"Invalid forced_scale: {forced_scale}")
 
     final_name = f"XY_{text}_{scale}X"
     cell = layout.create_cell(final_name)
     dbu = layout.dbu
 
-    advance_um = (char_width_um + char_space_um) * scale
     cursor_x_um = 0.0
 
-    for ch in text:
+    for index, ch in enumerate(text):
         glyph = ascii_cells[ch]
         box = glyph.bbox()
+
+        glyph_width_um = box.width() * dbu
 
         dx_um = cursor_x_um - (box.left * dbu * scale)
         dy_um = -(box.bottom * dbu * scale)
@@ -348,7 +360,10 @@ def create_xy_text_cell_from_gds(
         )
 
         cell.insert(pya.CellInstArray(glyph.cell_index(), trans))
-        cursor_x_um += advance_um
+
+        cursor_x_um += glyph_width_um * scale
+        if index != len(text) - 1:
+            cursor_x_um += char_space_um * scale
 
     ensure_bbox_within_limit(
         layout,
@@ -458,27 +473,78 @@ def build_user_wrapper_cell(
     for x_um, y_um in config.logo_positions:
         insert_instance(wrapper, logo_cell, x_um, y_um, dbu)
 
-    # Multi-line XY / text block
+    # ----------------------------
+    # Multi-line TEXT (完成版)
+    # ----------------------------
     lines = get_xy_lines(config, row, col)
     line_pitch = float(getattr(config, "xy_line_pitch", 18.0))
-    total_lines = len(lines)
 
-    for index, line_text in enumerate(lines):
-        y_offset_um = (total_lines - 1 - index) * line_pitch
+    bbox_x = config.xy_bbox[0]
+    bbox_y = config.xy_bbox[1]
 
-        line_cell = create_xy_text_cell_from_gds(
-            layout=layout,
-            text=line_text,
-            ascii_cells=ascii_cells,
-            target_bbox_x=config.xy_bbox[0],
-            target_bbox_y=config.xy_bbox[1],
+    placed_bottom_y_um = 0.0
+    line_specs = []
+
+    # 下から（3行目→2行目→1行目）
+    for line_text in reversed(lines):
+
+        chosen_cell = None
+        chosen_scale = None
+        chosen_height = None
+
+        for scale in sorted(XY_ALLOWED_SCALES, reverse=True):
+
+            # 横幅チェック（glyph実寸ベース）
+            base_width = get_text_width_um(layout, ascii_cells, line_text)
+            if base_width * scale > bbox_x:
+                continue
+
+            trial_cell = create_xy_text_cell_from_gds(
+                layout=layout,
+                text=line_text,
+                ascii_cells=ascii_cells,
+                target_bbox_x=bbox_x,
+                target_bbox_y=bbox_y,
+                forced_scale=scale,
+            )
+
+            box = trial_cell.bbox()
+            height_um = box.height() * dbu
+
+            # 縦方向bboxチェック
+            if placed_bottom_y_um + height_um > bbox_y:
+                continue
+
+            chosen_cell = trial_cell
+            chosen_scale = scale
+            chosen_height = height_um
+            break
+
+        if chosen_cell is None:
+            raise RuntimeError(
+                f"Line does not fit: '{line_text}', bbox=({bbox_x}, {bbox_y})"
+            )
+
+        line_specs.append(
+            {
+                "cell": chosen_cell,
+                "y_um": placed_bottom_y_um,
+            }
         )
 
+        # 非重なり保証（重要）
+        placed_bottom_y_um += max(
+            line_pitch * chosen_scale,
+            chosen_height,
+        )
+
+    # 配置
+    for spec in line_specs:
         insert_instance(
             wrapper,
-            line_cell,
+            spec["cell"],
             config.xy_pos[0],
-            config.xy_pos[1] + y_offset_um,
+            config.xy_pos[1] + spec["y_um"],
             dbu,
         )
 
