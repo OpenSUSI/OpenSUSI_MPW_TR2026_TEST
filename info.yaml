@@ -75,4 +75,4 @@ xy_mark:
 # ----------------------------
 # Tile-based logo map
 # ----------------------------
-logo_map: logo_map.yaml
+logo_map: map.yaml
