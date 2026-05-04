@@ -79,13 +79,51 @@ def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
         )
 
 
+def validate_slot_dir(slot_dir: Path, manifest: dict[str, Any]) -> None:
+    """Validate users/<githubId>/<shortOrderId>/<slot>/ consistency."""
+    payment_sequence = normalize_int(manifest.get("paymentSequence"))
+    expected_slot = f"{payment_sequence:02d}"
+
+    if slot_dir.name != expected_slot:
+        raise RuntimeError(
+            "Invalid submission path: "
+            f"slot dir '{slot_dir.name}' does not match "
+            f"paymentSequence '{expected_slot}', path={slot_dir}"
+        )
+
+    short_order_id = normalize_string(manifest.get("shortOrderId"))
+    if short_order_id and slot_dir.parent.name != short_order_id:
+        raise RuntimeError(
+            "Invalid submission path: "
+            f"order dir '{slot_dir.parent.name}' does not match "
+            f"shortOrderId '{short_order_id}', path={slot_dir}"
+        )
+
+    github_id = normalize_string(manifest.get("githubId"))
+    if github_id and slot_dir.parent.parent.name != github_id:
+        raise RuntimeError(
+            "Invalid submission path: "
+            f"github dir '{slot_dir.parent.parent.name}' does not match "
+            f"githubId '{github_id}', path={slot_dir}"
+        )
+
+
 def collect_users(users_dir: Path) -> list[UserEntry]:
+    """
+    Collect user submissions from the slot-aware layout only.
+
+    Expected layout:
+      users/<githubId>/<shortOrderId>/<slot>/GDSII_MDP.gds
+      users/<githubId>/<shortOrderId>/<slot>/manifest.json
+
+    Old flat layout users/<githubId>/<shortOrderId>/GDSII_MDP.gds is intentionally
+    not supported.
+    """
     if not users_dir.exists():
         raise FileNotFoundError(f"users dir not found: {users_dir}")
 
     users: list[UserEntry] = []
 
-    # users/<githubId>/<shortOrderId>/
     for github_dir in sorted(users_dir.iterdir(), key=lambda path: path.name):
         if not github_dir.is_dir() or github_dir.name in SYSTEM_DIRS:
             continue
@@ -94,36 +132,43 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
             if not order_dir.is_dir():
                 continue
 
-            gds = order_dir / USER_GDS_FILENAME
-            manifest_path = order_dir / USER_MANIFEST_FILENAME
+            for slot_dir in sorted(order_dir.iterdir(), key=lambda path: path.name):
+                if not slot_dir.is_dir():
+                    continue
 
-            if not gds.exists():
-                raise FileNotFoundError(f"GDS not found: {gds}")
+                gds = slot_dir / USER_GDS_FILENAME
+                manifest_path = slot_dir / USER_MANIFEST_FILENAME
 
-            if not manifest_path.exists():
-                raise FileNotFoundError(f"manifest.json not found: {manifest_path}")
+                if not gds.exists():
+                    raise FileNotFoundError(f"GDS not found: {gds}")
 
-            manifest = load_json(manifest_path)
-            validate_manifest(manifest, manifest_path)
+                if not manifest_path.exists():
+                    raise FileNotFoundError(
+                        f"manifest.json not found: {manifest_path}"
+                    )
 
-            github_id = normalize_string(manifest.get("githubId")) or github_dir.name
-            source_repo = normalize_string(manifest.get("sourceRepo"))
-            repo_name = extract_repo_name(source_repo)
-            normalized_repo_name = (
-                normalize_string(manifest.get("normalizedRepoName")) or repo_name
-            )
-            payment_sequence = normalize_int(manifest.get("paymentSequence"))
+                manifest = load_json(manifest_path)
+                validate_manifest(manifest, manifest_path)
+                validate_slot_dir(slot_dir, manifest)
 
-            users.append(
-                UserEntry(
-                    github_id=github_id,
-                    repo_name=repo_name,
-                    normalized_repo_name=normalized_repo_name,
-                    payment_sequence=payment_sequence,
-                    gds=gds,
-                    manifest_path=manifest_path,
-                    manifest=manifest,
+                github_id = normalize_string(manifest.get("githubId"))
+                source_repo = normalize_string(manifest.get("sourceRepo"))
+                repo_name = extract_repo_name(source_repo)
+                normalized_repo_name = (
+                    normalize_string(manifest.get("normalizedRepoName")) or repo_name
                 )
-            )
+                payment_sequence = normalize_int(manifest.get("paymentSequence"))
+
+                users.append(
+                    UserEntry(
+                        github_id=github_id,
+                        repo_name=repo_name,
+                        normalized_repo_name=normalized_repo_name,
+                        payment_sequence=payment_sequence,
+                        gds=gds,
+                        manifest_path=manifest_path,
+                        manifest=manifest,
+                    )
+                )
 
     return users
