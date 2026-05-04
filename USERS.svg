@@ -35,7 +35,7 @@ text { font-family: Arial, sans-serif; fill: black; }
 <text class="tile-run" x="66" y="124">Run: -</text>
 <text class="tile-run" x="66" y="142">Tile: (0,0)</text>
 </a>
-<a href="https://github.com/OpenSUSI/OpenSUSI_MPW_TR2026_TEST/blob/main/users/jun1okamura/ORD2605040" target="_blank">
+<a href="https://github.com/OpenSUSI/OpenSUSI_MPW_TR2026_TEST/blob/main/users/jun1okamura/ORD-260504-003216/01" target="_blank">
 <rect class="tile tile-user" x="200" y="70" width="140" height="90" />
 <text class="tile-title" x="206" y="88">jun1okamura</text>
 <text class="tile-sub" x="206" y="106">tr_1um_jun1okamura_tr-1um_test2</text>
