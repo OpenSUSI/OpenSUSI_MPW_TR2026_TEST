@@ -28,10 +28,6 @@ def extract_repo_name(source_repo: str) -> str:
     return value or "unknown"
 
 
-def make_short_order_id(order_id: str) -> str:
-    return str(order_id or "").replace("-", "")[:10]
-
-
 def build_top_cell_name(github_id: str, repo_name: str) -> str:
     normalized_github_id = normalize_name(github_id)
     normalized_repo_name = normalize_name(repo_name)
@@ -62,12 +58,10 @@ def main() -> None:
 
     repo_name = extract_repo_name(args.source_repo)
     normalized_repo_name = normalize_name(repo_name)
-    short_order_id = make_short_order_id(args.order_id)
     gds_top_cell = build_top_cell_name(args.github_id, repo_name)
 
     manifest = {
         "orderId": str(args.order_id),
-        "shortOrderId": short_order_id,
         "paymentSequence": int(args.payment_sequence),
         "githubId": str(args.github_id),
         "sourceRepo": str(args.source_repo),

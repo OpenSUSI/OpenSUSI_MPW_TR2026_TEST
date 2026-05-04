@@ -22,7 +22,6 @@ class Placement:
     col: Optional[int]
     paymentSequence: Optional[int] = None
     normalizedRepoName: Optional[str] = None
-    shortOrderId: Optional[str] = None
     orderId: Optional[str] = None
     sourceRepo: Optional[str] = None
     sourceRunId: Optional[str] = None

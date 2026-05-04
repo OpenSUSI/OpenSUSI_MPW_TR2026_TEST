@@ -6,6 +6,7 @@
 import argparse
 import json
 import os
+import re
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,26 @@ TILE_H = 90
 MARGIN = 30
 HEADER_H = 40
 ROW_LABEL_W = 30
+
+
+def normalize_string(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def normalize_int(value: Any) -> int:
+    text = normalize_string(value)
+    return int(text) if text else 0
+
+
+def order_id_to_dir_name(order_id: Any) -> str:
+    value = normalize_string(order_id)
+    match = re.fullmatch(r"ORD-20([0-9]{2})([0-9]{2})([0-9]{2})-(.+)", value)
+
+    if not match:
+        return value
+
+    yy, mm, dd, suffix = match.groups()
+    return f"ORD-{yy}{mm}{dd}-{suffix}"
 
 
 def get_default_repo_owner() -> str:
@@ -71,12 +92,13 @@ def repo_file_url(
 ) -> str:
     entry_type = entry.get("type", "")
     github_id = entry.get("githubId", "-")
-    short_order_id = entry.get("shortOrderId", "")
 
     if entry_type in {"teg", "fill"}:
         rel = "users/000_system"
     else:
-        rel = f"users/{github_id}/{short_order_id}"
+        order_dir = order_id_to_dir_name(entry.get("orderId"))
+        slot = f"{normalize_int(entry.get('paymentSequence')):02d}"
+        rel = f"users/{github_id}/{order_dir}/{slot}"
 
     return f"https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{rel}"
 

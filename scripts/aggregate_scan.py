@@ -94,7 +94,7 @@ def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
 def validate_slot_dir(slot_dir: Path, manifest: dict[str, Any]) -> None:
     """Validate users/<githubId>/<orderDir>/<slot>/ consistency.
 
-    orderDir is derived from orderId, not from shortOrderId.
+    orderDir is derived from orderId.
     Example:
       orderId  = ORD-20260504-003216
       orderDir = ORD-260504-003216
@@ -136,10 +136,6 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
 
     orderDir is derived from orderId:
       ORD-YYYYMMDD-XXXXXX -> ORD-YYMMDD-XXXXXX
-
-    shortOrderId is intentionally not used.
-    Old flat layout users/<githubId>/<orderDir>/GDSII_MDP.gds is intentionally
-    not supported.
     """
     if not users_dir.exists():
         raise FileNotFoundError(f"users dir not found: {users_dir}")

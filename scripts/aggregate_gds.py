@@ -474,7 +474,6 @@ def make_placement(
         col=col,
         paymentSequence=manifest.get("paymentSequence"),
         normalizedRepoName=manifest.get("normalizedRepoName"),
-        shortOrderId=manifest.get("shortOrderId"),
         orderId=manifest.get("orderId"),
         sourceRepo=manifest.get("sourceRepo"),
         sourceRunId=manifest.get("sourceRunId"),
@@ -498,8 +497,7 @@ def build_user_wrapper_cell(
     logo_cache: dict[str, pya.Cell],
     ascii_cells: dict[str, pya.Cell],
 ) -> pya.Cell:
-    short_order_id = normalize_string((user.manifest or {}).get("shortOrderId")) or "unknown"
-    wrapper = layout.create_cell(f"WRAP_{user_top_name}_{short_order_id}")
+    wrapper = layout.create_cell(f"WRAP_{user_top_name}")
 
     dbu = layout.dbu
 
