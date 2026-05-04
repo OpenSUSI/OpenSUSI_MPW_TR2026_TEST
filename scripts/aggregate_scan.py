@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import json
+import re
 
 
 SYSTEM_DIRS = {"000_system"}
@@ -56,10 +57,21 @@ def extract_repo_name(source_repo: str) -> str:
     return value or "unknown"
 
 
+def order_id_to_dir_name(order_id: Any) -> str:
+    """Convert ORD-YYYYMMDD-XXXXXX to ORD-YYMMDD-XXXXXX for directory names."""
+    value = normalize_string(order_id)
+    match = re.fullmatch(r"ORD-20([0-9]{2})([0-9]{2})([0-9]{2})-(.+)", value)
+
+    if not match:
+        return value
+
+    yy, mm, dd, suffix = match.groups()
+    return f"ORD-{yy}{mm}{dd}-{suffix}"
+
+
 def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
     required = [
         "orderId",
-        "shortOrderId",
         "paymentSequence",
         "githubId",
         "sourceRepo",
@@ -80,7 +92,13 @@ def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
 
 
 def validate_slot_dir(slot_dir: Path, manifest: dict[str, Any]) -> None:
-    """Validate users/<githubId>/<shortOrderId>/<slot>/ consistency."""
+    """Validate users/<githubId>/<orderDir>/<slot>/ consistency.
+
+    orderDir is derived from orderId, not from shortOrderId.
+    Example:
+      orderId  = ORD-20260504-003216
+      orderDir = ORD-260504-003216
+    """
     payment_sequence = normalize_int(manifest.get("paymentSequence"))
     expected_slot = f"{payment_sequence:02d}"
 
@@ -91,12 +109,12 @@ def validate_slot_dir(slot_dir: Path, manifest: dict[str, Any]) -> None:
             f"paymentSequence '{expected_slot}', path={slot_dir}"
         )
 
-    short_order_id = normalize_string(manifest.get("shortOrderId"))
-    if short_order_id and slot_dir.parent.name != short_order_id:
+    expected_order_dir = order_id_to_dir_name(manifest.get("orderId"))
+    if expected_order_dir and slot_dir.parent.name != expected_order_dir:
         raise RuntimeError(
             "Invalid submission path: "
             f"order dir '{slot_dir.parent.name}' does not match "
-            f"shortOrderId '{short_order_id}', path={slot_dir}"
+            f"orderId-derived dir '{expected_order_dir}', path={slot_dir}"
         )
 
     github_id = normalize_string(manifest.get("githubId"))
@@ -113,10 +131,14 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
     Collect user submissions from the slot-aware layout only.
 
     Expected layout:
-      users/<githubId>/<shortOrderId>/<slot>/GDSII_MDP.gds
-      users/<githubId>/<shortOrderId>/<slot>/manifest.json
+      users/<githubId>/<orderDir>/<slot>/GDSII_MDP.gds
+      users/<githubId>/<orderDir>/<slot>/manifest.json
 
-    Old flat layout users/<githubId>/<shortOrderId>/GDSII_MDP.gds is intentionally
+    orderDir is derived from orderId:
+      ORD-YYYYMMDD-XXXXXX -> ORD-YYMMDD-XXXXXX
+
+    shortOrderId is intentionally not used.
+    Old flat layout users/<githubId>/<orderDir>/GDSII_MDP.gds is intentionally
     not supported.
     """
     if not users_dir.exists():
