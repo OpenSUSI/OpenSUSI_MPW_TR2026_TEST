@@ -8,7 +8,7 @@ name: Aggregate Layout
 concurrency:
   group: opensusi-aggregate-main
   cancel-in-progress: false
-    
+
 on:
   workflow_dispatch:
   push:
@@ -49,6 +49,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           python3 -m pip install --upgrade pip
           python3 -m pip install pyyaml klayout
 
@@ -79,23 +80,74 @@ jobs:
             --repo-name "${{ github.event.repository.name }}" \
             --branch "main"
 
-      - name: Commit and push
+      - name: Commit and push with retry
         run: |
           set -euo pipefail
 
           git config user.name "opensusi-bot"
           git config user.email "bot@opensusi.org"
 
-          git add -f project/manifest.json
-          git add -f project/ALL_GDSII_MDP.gds
-          git add -f USERS.md
-          git add -f USERS.svg
+          rebuild_outputs() {
+            mkdir -p project
 
-          git diff --cached --quiet && {
-            echo "No changes"
-            exit 0
+            python3 scripts/aggregate_submission.py \
+              --info-yaml info.yaml \
+              --users-dir users \
+              --output-gds project/ALL_GDSII_MDP.gds \
+              --output-manifest project/manifest.json
+
+            python3 scripts/generate_users_md.py \
+              --manifest project/manifest.json \
+              --output USERS.md
+
+            python3 scripts/generate_users_svg.py \
+              --manifest project/manifest.json \
+              --output USERS.svg \
+              --repo-owner "${{ github.repository_owner }}" \
+              --repo-name "${{ github.event.repository.name }}" \
+              --branch "main"
           }
 
+          stage_outputs() {
+            git add -f project/manifest.json
+            git add -f project/ALL_GDSII_MDP.gds
+            git add -f USERS.md
+            git add -f USERS.svg
+          }
+
+          stage_outputs
+
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+
           git commit -m "Update aggregated layout"
-          git push origin HEAD:main
-          
+
+          for attempt in 1 2 3 4 5; do
+            echo "Push attempt ${attempt}"
+
+            if git push origin HEAD:main; then
+              echo "Push succeeded"
+              exit 0
+            fi
+
+            echo "Push failed. Remote main was updated. Re-sync and rebuild."
+
+            git fetch origin main
+            git reset --hard origin/main
+
+            rebuild_outputs
+            stage_outputs
+
+            if git diff --cached --quiet; then
+              echo "No changes after re-sync"
+              exit 0
+            fi
+
+            git commit -m "Update aggregated layout"
+            sleep $((attempt * 3))
+          done
+
+          echo "Failed to push after retries"
+          exit 1
