@@ -1,16 +1,3 @@
-.gitignore
 .DS_Store
-USERS.md
-USERS.svg
-script/__pycache__
-# ------------------------
-# Generated outputs
-# ------------------------
-project/*
-!project/.gitkeep
-# ------------------------
-# User submissions
-# ------------------------
-users/*
-!users/.gitkeep
-!users/000_system/
+users/
+project/
