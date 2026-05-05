@@ -10,6 +10,8 @@ from pathlib import Path
 
 import klayout.db as pya
 
+MAX_GDS_CELL_NAME_LEN = 64
+
 
 def normalize_name(value: str) -> str:
     s = str(value or "").strip().lower()
@@ -26,10 +28,29 @@ def extract_repo_name(source_repo: str) -> str:
     return value or "unknown"
 
 
-def build_top_cell_name(github_id: str, source_repo: str) -> str:
+def order_id_to_short_id(order_id: str) -> str:
+    safe = str(order_id or "").strip()
+
+    m = re.match(r"^ORD-20(\d{2})(\d{2})(\d{2})-(.+)$", safe)
+    if m:
+        return f"ORD-{m.group(1)}{m.group(2)}{m.group(3)}-{m.group(4)}"
+
+    return safe
+
+
+def build_top_cell_name(
+    github_id: str,
+    source_repo: str,
+    order_id: str,
+    slot_id: str
+) -> str:
     gid = normalize_name(github_id)
     repo = normalize_name(extract_repo_name(source_repo))
-    return f"tr_1um_{gid}_{repo}"[:64]
+    short_order = normalize_name(order_id_to_short_id(order_id))
+    slot = normalize_name(slot_id)
+
+    name = f"tr_1um_{gid}_{repo}_{short_order}_{slot}"
+    return name[:MAX_GDS_CELL_NAME_LEN]
 
 
 def get_single_top_cell(layout: pya.Layout, source: Path) -> pya.Cell:
@@ -49,6 +70,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gds", type=Path, required=True)
     parser.add_argument("--github-id", required=True)
     parser.add_argument("--source-repo", required=True)
+
+    # New MPW naming inputs.
+    parser.add_argument("--order-id", required=True)
+    parser.add_argument("--slot-id", required=True)
+
     return parser.parse_args()
 
 
@@ -62,7 +88,12 @@ def main() -> None:
     layout.read(str(args.gds))
 
     top = get_single_top_cell(layout, args.gds)
-    new_name = build_top_cell_name(args.github_id, args.source_repo)
+    new_name = build_top_cell_name(
+        args.github_id,
+        args.source_repo,
+        args.order_id,
+        args.slot_id
+    )
 
     old_name = top.name
     if old_name != new_name:

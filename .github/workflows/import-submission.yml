@@ -137,8 +137,10 @@ jobs:
           python3 scripts/rename_gds_top.py \
             --gds "${{ steps.vars.outputs.target_dir }}/GDSII_MDP.gds" \
             --github-id "${{ inputs.github_id }}" \
-            --source-repo "${{ inputs.source_repo }}"
-
+            --source-repo "${{ inputs.source_repo }}" \
+            --order-id "${{ inputs.order_id }}" \
+            --slot-id "${{ steps.vars.outputs.slot_id }}"
+            
       - name: Write manifest
         run: |
           set -euo pipefail
