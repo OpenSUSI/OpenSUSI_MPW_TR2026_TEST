@@ -62,35 +62,35 @@ def ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def validate_payment_sequences(users, max_tiles: int) -> None:
+def validate_submission_sequences(users, max_tiles: int) -> None:
     seen: dict[int, str] = {}
 
     for user in users:
-        seq = int(user.payment_sequence)
+        seq = int(user.submission_sequence)
 
         if seq <= 0:
             raise RuntimeError(
-                f"Invalid paymentSequence: {seq}, order={user.manifest.get('orderId')}, "
+                f"Invalid submissionSequence: {seq}, order={user.manifest.get('orderId')}, "
                 f"path={user.manifest_path}"
             )
 
         if seq in seen:
             raise RuntimeError(
-                f"Duplicate paymentSequence: {seq}, "
+                f"Duplicate submissionSequence: {seq}, "
                 f"orders={seen[seq]} and {user.manifest.get('orderId')}"
             )
 
         if seq > max_tiles:
             raise RuntimeError(
-                f"paymentSequence exceeds grid capacity: seq={seq}, max_tiles={max_tiles}, "
+                f"submissionSequence exceeds grid capacity: seq={seq}, max_tiles={max_tiles}, "
                 f"order={user.manifest.get('orderId')}"
             )
 
         seen[seq] = str(user.manifest.get("orderId"))
 
 
-def sort_users_by_payment_sequence(users):
-    return sorted(users, key=lambda user: user.payment_sequence)
+def sort_users_by_submission_sequence(users):
+    return sorted(users, key=lambda user: user.submission_sequence)
 
 
 def main() -> None:
@@ -103,8 +103,8 @@ def main() -> None:
     users = collect_users(args.users_dir)
 
     max_tiles = config.grid_x * config.grid_y
-    validate_payment_sequences(users, max_tiles)
-    ordered_users = sort_users_by_payment_sequence(users)
+    validate_submission_sequences(users, max_tiles)
+    ordered_users = sort_users_by_submission_sequence(users)
 
     positions = build_positions(
         config.grid_x,

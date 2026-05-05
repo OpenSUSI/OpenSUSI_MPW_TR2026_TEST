@@ -20,7 +20,7 @@ class Placement:
     tileIndex: int
     row: Optional[int]
     col: Optional[int]
-    paymentSequence: Optional[int] = None
+    submissionSequence: Optional[int] = None
     normalizedRepoName: Optional[str] = None
     orderId: Optional[str] = None
     sourceRepo: Optional[str] = None

@@ -371,10 +371,10 @@ def load_logo_map(path: Path) -> dict[str, dict[str, str]]:
 
 def get_tile_number(user: Any, tile_index: int) -> int:
     manifest = getattr(user, "manifest", None) or {}
-    payment_sequence = normalize_int(manifest.get("paymentSequence"))
+    submission_sequence = normalize_int(manifest.get("submissionSequence"))
 
-    if payment_sequence is not None:
-        return payment_sequence
+    if submission_sequence is not None:
+        return submission_sequence
 
     return int(tile_index)
 
@@ -472,7 +472,7 @@ def make_placement(
         tileIndex=tile_index,
         row=row,
         col=col,
-        paymentSequence=manifest.get("paymentSequence"),
+        submissionSequence=manifest.get("submissionSequence"),
         normalizedRepoName=manifest.get("normalizedRepoName"),
         orderId=manifest.get("orderId"),
         sourceRepo=manifest.get("sourceRepo"),

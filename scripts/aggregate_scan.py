@@ -19,7 +19,7 @@ class UserEntry:
     github_id: str
     repo_name: str
     normalized_repo_name: str
-    payment_sequence: int
+    submission_sequence: int
     gds: Path
     manifest_path: Path
     manifest: dict[str, Any]
@@ -71,7 +71,7 @@ def order_id_to_dir_name(order_id: Any) -> str:
 def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
     required = [
         "orderId",
-        "paymentSequence",
+        "submissionSequence",
         "slotId",
         "githubId",
         "sourceRepo",
@@ -84,10 +84,10 @@ def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
     if missing:
         raise RuntimeError(f"Invalid manifest: missing {missing}, path={path}")
 
-    payment_sequence = normalize_int(manifest.get("paymentSequence"))
-    if payment_sequence <= 0:
+    submission_sequence = normalize_int(manifest.get("submissionSequence"))
+    if submission_sequence <= 0:
         raise RuntimeError(
-            f"Invalid manifest: paymentSequence must be > 0, path={path}"
+            f"Invalid manifest: submissionSequence must be > 0, path={path}"
         )
 
     slot_id = normalize_string(manifest.get("slotId"))
@@ -172,14 +172,14 @@ def collect_users(users_dir: Path) -> list[UserEntry]:
                 normalized_repo_name = (
                     normalize_string(manifest.get("normalizedRepoName")) or repo_name
                 )
-                payment_sequence = normalize_int(manifest.get("paymentSequence"))
+                submission_sequence = normalize_int(manifest.get("submissionSequence"))
 
                 users.append(
                     UserEntry(
                         github_id=github_id,
                         repo_name=repo_name,
                         normalized_repo_name=normalized_repo_name,
-                        payment_sequence=payment_sequence,
+                        submission_sequence=submission_sequence,
                         gds=gds,
                         manifest_path=manifest_path,
                         manifest=manifest,

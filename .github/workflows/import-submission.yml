@@ -27,7 +27,7 @@ on:
         required: true
         default: "GDSII_MDP"
         type: string
-      payment_sequence:
+      submission_sequence:
         required: true
         type: string
       target_dir:
@@ -152,7 +152,7 @@ jobs:
             --source-repo "${{ inputs.source_repo }}" \
             --source-run-id "${{ inputs.source_run_id }}" \
             --source-artifact-name "${{ inputs.source_artifact_name }}" \
-            --payment-sequence "${{ inputs.payment_sequence }}" \
+            --submission-sequence "${{ inputs.submission_sequence }}" \
             --slot-id "${{ steps.vars.outputs.slot_id }}"
 
       - name: Commit and push with retry
@@ -216,7 +216,7 @@ jobs:
                 --source-repo "${{ inputs.source_repo }}" \
                 --source-run-id "${{ inputs.source_run_id }}" \
                 --source-artifact-name "${{ inputs.source_artifact_name }}" \
-                --payment-sequence "${{ inputs.payment_sequence }}" \
+                --submission-sequence "${{ inputs.submission_sequence }}" \
                 --slot-id "${{ steps.vars.outputs.slot_id }}"
             }
 

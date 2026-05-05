@@ -97,7 +97,7 @@ def repo_file_url(
         rel = "users/000_system"
     else:
         order_dir = order_id_to_dir_name(entry.get("orderId"))
-        slot = f"{normalize_int(entry.get('paymentSequence')):02d}"
+        slot = f"{normalize_int(entry.get('submissionSequence')):02d}"
         rel = f"users/{github_id}/{order_dir}/{slot}"
 
     return f"https://github.com/{repo_owner}/{repo_name}/blob/{branch}/{rel}"
