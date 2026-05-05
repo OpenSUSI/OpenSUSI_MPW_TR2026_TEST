@@ -68,11 +68,11 @@ def order_id_to_dir_name(order_id: Any) -> str:
     yy, mm, dd, suffix = match.groups()
     return f"ORD-{yy}{mm}{dd}-{suffix}"
 
-
 def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
     required = [
         "orderId",
         "paymentSequence",
+        "slotId",
         "githubId",
         "sourceRepo",
         "normalizedRepoName",
@@ -90,23 +90,20 @@ def validate_manifest(manifest: dict[str, Any], path: Path) -> None:
             f"Invalid manifest: paymentSequence must be > 0, path={path}"
         )
 
+    slot_id = normalize_string(manifest.get("slotId"))
+    if not re.fullmatch(r"\d{2}", slot_id):
+        raise RuntimeError(
+            f"Invalid manifest: slotId must be 2 digits, slotId={slot_id}, path={path}"
+        )
 
 def validate_slot_dir(slot_dir: Path, manifest: dict[str, Any]) -> None:
-    """Validate users/<githubId>/<orderDir>/<slot>/ consistency.
+    slot_id = normalize_string(manifest.get("slotId"))
 
-    orderDir is derived from orderId.
-    Example:
-      orderId  = ORD-20260504-003216
-      orderDir = ORD-260504-003216
-    """
-    payment_sequence = normalize_int(manifest.get("paymentSequence"))
-    expected_slot = f"{payment_sequence:02d}"
-
-    if slot_dir.name != expected_slot:
+    if slot_dir.name != slot_id:
         raise RuntimeError(
             "Invalid submission path: "
             f"slot dir '{slot_dir.name}' does not match "
-            f"paymentSequence '{expected_slot}', path={slot_dir}"
+            f"slotId '{slot_id}', path={slot_dir}"
         )
 
     expected_order_dir = order_id_to_dir_name(manifest.get("orderId"))
