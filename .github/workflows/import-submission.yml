@@ -5,7 +5,7 @@
 name: Import Submission
 
 concurrency:
-  group: opensusi-import-main
+  group: opensusi-import-${{ inputs.target_dir }}
   cancel-in-progress: false
 
 on:
@@ -140,7 +140,7 @@ jobs:
             --source-repo "${{ inputs.source_repo }}" \
             --order-id "${{ inputs.order_id }}" \
             --slot-id "${{ steps.vars.outputs.slot_id }}"
-            
+
       - name: Write manifest
         run: |
           set -euo pipefail
@@ -155,20 +155,81 @@ jobs:
             --payment-sequence "${{ inputs.payment_sequence }}" \
             --slot-id "${{ steps.vars.outputs.slot_id }}"
 
-      - name: Commit and push
+      - name: Commit and push with retry
         run: |
           set -euo pipefail
 
           git config user.name "opensusi-bot"
           git config user.email "bot@opensusi.org"
 
-          git add -f "${{ steps.vars.outputs.target_dir }}/GDSII_MDP.gds"
-          git add -f "${{ steps.vars.outputs.target_dir }}/manifest.json"
+          TARGET_DIR="${{ steps.vars.outputs.target_dir }}"
+          COMMIT_MSG="Import ${{ inputs.github_id }} (${{ steps.vars.outputs.short_order_id }}/${{ steps.vars.outputs.slot_id }})"
 
-          git commit -m "Import ${{ inputs.github_id }} (${{ steps.vars.outputs.short_order_id }}/${{ steps.vars.outputs.slot_id }})" || {
-            echo "No changes"
-            exit 0
+          stage_outputs() {
+            git add -f "${TARGET_DIR}/GDSII_MDP.gds"
+            git add -f "${TARGET_DIR}/manifest.json"
           }
 
-          git pull --rebase origin main
-          git push origin HEAD:main
+          stage_outputs
+
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+
+          git commit -m "${COMMIT_MSG}"
+
+          for attempt in 1 2 3 4 5; do
+            echo "Push attempt ${attempt}"
+
+            if git push origin HEAD:main; then
+              echo "Push succeeded"
+              exit 0
+            fi
+
+            echo "Push failed. Remote main was updated. Re-sync and retry."
+
+            git fetch origin main
+            git rebase origin/main || {
+              echo "Rebase failed. Reset to origin/main and re-stage target files."
+              git rebase --abort || true
+              git reset --hard origin/main
+
+              mkdir -p "${TARGET_DIR}"
+              cp work/unpacked/* "${TARGET_DIR}/" 2>/dev/null || true
+
+              # Restore canonical imported files from current workspace if they still exist.
+              # If reset removed them, re-copy GDS and regenerate manifest by rerunning required steps.
+              cp work/unpacked/$(basename "$(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \) | head -n 1)") "${TARGET_DIR}/GDSII_MDP.gds"
+
+              python3 scripts/rename_gds_top.py \
+                --gds "${TARGET_DIR}/GDSII_MDP.gds" \
+                --github-id "${{ inputs.github_id }}" \
+                --source-repo "${{ inputs.source_repo }}" \
+                --order-id "${{ inputs.order_id }}" \
+                --slot-id "${{ steps.vars.outputs.slot_id }}"
+
+              python3 scripts/write_import_manifest.py \
+                --target-dir "${TARGET_DIR}" \
+                --order-id "${{ inputs.order_id }}" \
+                --github-id "${{ inputs.github_id }}" \
+                --source-repo "${{ inputs.source_repo }}" \
+                --source-run-id "${{ inputs.source_run_id }}" \
+                --source-artifact-name "${{ inputs.source_artifact_name }}" \
+                --payment-sequence "${{ inputs.payment_sequence }}" \
+                --slot-id "${{ steps.vars.outputs.slot_id }}"
+            }
+
+            stage_outputs
+
+            if git diff --cached --quiet; then
+              echo "No changes after re-sync"
+              exit 0
+            fi
+
+            git commit -m "${COMMIT_MSG}"
+            sleep $((attempt * 3))
+          done
+
+          echo "Failed to push after retries"
+          exit 1
