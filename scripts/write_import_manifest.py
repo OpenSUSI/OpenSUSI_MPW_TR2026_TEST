@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-run-id", required=True)
     parser.add_argument("--source-artifact-name", required=True)
     parser.add_argument("--payment-sequence", required=True, type=int)
+    parser.add_argument("--slot-id", required=True)
 
     return parser.parse_args()
 
@@ -63,6 +64,7 @@ def main() -> None:
     manifest = {
         "orderId": str(args.order_id),
         "paymentSequence": int(args.payment_sequence),
+        "slotId": str(args.slot_id),
         "githubId": str(args.github_id),
         "sourceRepo": str(args.source_repo),
         "normalizedRepoName": normalized_repo_name,

@@ -30,6 +30,9 @@ on:
       payment_sequence:
         required: true
         type: string
+      target_dir:
+        required: true
+        type: string
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -74,15 +77,13 @@ jobs:
           set -euo pipefail
 
           ORDER_ID="${{ inputs.order_id }}"
-          PAYMENT_SEQUENCE="${{ inputs.payment_sequence }}"
+          TARGET_DIR="${{ inputs.target_dir }}"
 
           SHORT_ORDER_ID=$(echo "${ORDER_ID}" | sed -E 's/^ORD-20([0-9]{2})([0-9]{2})([0-9]{2})-(.+)$/ORD-\1\2\3-\4/')
-
-          SLOT_NO=$(printf "%02d" "${PAYMENT_SEQUENCE}")
-          TARGET_DIR="users/${{ inputs.github_id }}/${SHORT_ORDER_ID}/${SLOT_NO}"
+          SLOT_ID="$(basename "${TARGET_DIR}")"
 
           echo "short_order_id=${SHORT_ORDER_ID}" >> "$GITHUB_OUTPUT"
-          echo "slot_no=${SLOT_NO}" >> "$GITHUB_OUTPUT"
+          echo "slot_id=${SLOT_ID}" >> "$GITHUB_OUTPUT"
           echo "target_dir=${TARGET_DIR}" >> "$GITHUB_OUTPUT"
 
       - name: Download artifact
@@ -149,7 +150,8 @@ jobs:
             --source-repo "${{ inputs.source_repo }}" \
             --source-run-id "${{ inputs.source_run_id }}" \
             --source-artifact-name "${{ inputs.source_artifact_name }}" \
-            --payment-sequence "${{ steps.vars.outputs.slot_no }}"
+            --payment-sequence "${{ inputs.payment_sequence }}" \
+            --slot-id "${{ steps.vars.outputs.slot_id }}"
 
       - name: Commit and push
         run: |
@@ -161,11 +163,10 @@ jobs:
           git add -f "${{ steps.vars.outputs.target_dir }}/GDSII_MDP.gds"
           git add -f "${{ steps.vars.outputs.target_dir }}/manifest.json"
 
-          git commit -m "Import ${{ inputs.github_id }} (${{ steps.vars.outputs.short_order_id }}/${{ steps.vars.outputs.slot_no }})" || {
+          git commit -m "Import ${{ inputs.github_id }} (${{ steps.vars.outputs.short_order_id }}/${{ steps.vars.outputs.slot_id }})" || {
             echo "No changes"
             exit 0
           }
 
           git pull --rebase origin main
           git push origin HEAD:main
-          
