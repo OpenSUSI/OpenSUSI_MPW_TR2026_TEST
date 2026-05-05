@@ -11,6 +11,9 @@ import re
 from pathlib import Path
 
 
+MAX_GDS_CELL_NAME_LEN = 64
+
+
 def normalize_name(value: str) -> str:
     text = str(value or "").strip().lower()
     text = re.sub(r"[^a-z0-9._-]+", "_", text)
@@ -28,10 +31,33 @@ def extract_repo_name(source_repo: str) -> str:
     return value or "unknown"
 
 
-def build_top_cell_name(github_id: str, repo_name: str) -> str:
+def order_id_to_short_id(order_id: str) -> str:
+    safe = str(order_id or "").strip()
+
+    match = re.match(r"^ORD-20(\d{2})(\d{2})(\d{2})-(.+)$", safe)
+    if match:
+        return f"ORD-{match.group(1)}{match.group(2)}{match.group(3)}-{match.group(4)}"
+
+    return safe
+
+
+def build_top_cell_name(
+    github_id: str,
+    repo_name: str,
+    order_id: str,
+    slot_id: str
+) -> str:
     normalized_github_id = normalize_name(github_id)
     normalized_repo_name = normalize_name(repo_name)
-    return f"tr_1um_{normalized_github_id}_{normalized_repo_name}"[:64]
+    normalized_order_id = normalize_name(order_id_to_short_id(order_id))
+    normalized_slot_id = normalize_name(slot_id)
+
+    return (
+        f"tr_1um_{normalized_github_id}_"
+        f"{normalized_repo_name}_"
+        f"{normalized_order_id}_"
+        f"{normalized_slot_id}"
+    )[:MAX_GDS_CELL_NAME_LEN]
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,7 +85,13 @@ def main() -> None:
 
     repo_name = extract_repo_name(args.source_repo)
     normalized_repo_name = normalize_name(repo_name)
-    gds_top_cell = build_top_cell_name(args.github_id, repo_name)
+
+    gds_top_cell = build_top_cell_name(
+        args.github_id,
+        repo_name,
+        args.order_id,
+        args.slot_id,
+    )
 
     manifest = {
         "orderId": str(args.order_id),
