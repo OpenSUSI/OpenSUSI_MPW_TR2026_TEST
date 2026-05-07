@@ -76,14 +76,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          ORDER_ID="${{ inputs.order_id }}"
           TARGET_DIR="${{ inputs.target_dir }}"
 
-          SHORT_ORDER_ID=$(echo "${ORDER_ID}" | sed -E 's/^ORD-20([0-9]{2})([0-9]{2})([0-9]{2})-(.+)$/ORD-\1\2\3-\4/')
-          SLOT_ID="$(basename "${TARGET_DIR}")"
-
-          echo "short_order_id=${SHORT_ORDER_ID}" >> "$GITHUB_OUTPUT"
-          echo "slot_id=${SLOT_ID}" >> "$GITHUB_OUTPUT"
           echo "target_dir=${TARGET_DIR}" >> "$GITHUB_OUTPUT"
 
       - name: Download artifact
@@ -136,24 +130,20 @@ jobs:
 
           python3 scripts/rename_gds_top.py \
             --gds "${{ steps.vars.outputs.target_dir }}/GDSII_MDP.gds" \
-            --github-id "${{ inputs.github_id }}" \
-            --source-repo "${{ inputs.source_repo }}" \
-            --order-id "${{ inputs.order_id }}" \
-            --slot-id "${{ steps.vars.outputs.slot_id }}"
+            --order-id "${{ inputs.order_id }}"
 
       - name: Write manifest
         run: |
           set -euo pipefail
 
           python3 scripts/write_import_manifest.py \
-            --target-dir "${{ steps.vars.outputs.target_dir }}" \
             --order-id "${{ inputs.order_id }}" \
             --github-id "${{ inputs.github_id }}" \
             --source-repo "${{ inputs.source_repo }}" \
             --source-run-id "${{ inputs.source_run_id }}" \
             --source-artifact-name "${{ inputs.source_artifact_name }}" \
             --submission-sequence "${{ inputs.submission_sequence }}" \
-            --slot-id "${{ steps.vars.outputs.slot_id }}"
+            --output "${{ steps.vars.outputs.target_dir }}/manifest.json"
 
       - name: Commit and push with retry
         run: |
@@ -163,11 +153,37 @@ jobs:
           git config user.email "bot@opensusi.org"
 
           TARGET_DIR="${{ steps.vars.outputs.target_dir }}"
-          COMMIT_MSG="Import ${{ inputs.github_id }} (${{ steps.vars.outputs.short_order_id }}/${{ steps.vars.outputs.slot_id }})"
+          COMMIT_MSG="Import ${{ inputs.github_id }} (${{ inputs.order_id }})"
 
           stage_outputs() {
             git add -f "${TARGET_DIR}/GDSII_MDP.gds"
             git add -f "${TARGET_DIR}/manifest.json"
+          }
+
+          regenerate_outputs() {
+            mkdir -p "${TARGET_DIR}"
+
+            mapfile -t GDS_FILES < <(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \))
+
+            if [ "${#GDS_FILES[@]}" -ne 1 ]; then
+              echo "Expected exactly one GDS file during retry, found: ${#GDS_FILES[@]}"
+              exit 1
+            fi
+
+            cp "${GDS_FILES[0]}" "${TARGET_DIR}/GDSII_MDP.gds"
+
+            python3 scripts/rename_gds_top.py \
+              --gds "${TARGET_DIR}/GDSII_MDP.gds" \
+              --order-id "${{ inputs.order_id }}"
+
+            python3 scripts/write_import_manifest.py \
+              --order-id "${{ inputs.order_id }}" \
+              --github-id "${{ inputs.github_id }}" \
+              --source-repo "${{ inputs.source_repo }}" \
+              --source-run-id "${{ inputs.source_run_id }}" \
+              --source-artifact-name "${{ inputs.source_artifact_name }}" \
+              --submission-sequence "${{ inputs.submission_sequence }}" \
+              --output "${TARGET_DIR}/manifest.json"
           }
 
           stage_outputs
@@ -191,33 +207,10 @@ jobs:
 
             git fetch origin main
             git rebase origin/main || {
-              echo "Rebase failed. Reset to origin/main and re-stage target files."
+              echo "Rebase failed. Reset to origin/main and regenerate target files."
               git rebase --abort || true
               git reset --hard origin/main
-
-              mkdir -p "${TARGET_DIR}"
-              cp work/unpacked/* "${TARGET_DIR}/" 2>/dev/null || true
-
-              # Restore canonical imported files from current workspace if they still exist.
-              # If reset removed them, re-copy GDS and regenerate manifest by rerunning required steps.
-              cp work/unpacked/$(basename "$(find work/unpacked -type f \( -name "*.gds" -o -name "*.gdsii" \) | head -n 1)") "${TARGET_DIR}/GDSII_MDP.gds"
-
-              python3 scripts/rename_gds_top.py \
-                --gds "${TARGET_DIR}/GDSII_MDP.gds" \
-                --github-id "${{ inputs.github_id }}" \
-                --source-repo "${{ inputs.source_repo }}" \
-                --order-id "${{ inputs.order_id }}" \
-                --slot-id "${{ steps.vars.outputs.slot_id }}"
-
-              python3 scripts/write_import_manifest.py \
-                --target-dir "${TARGET_DIR}" \
-                --order-id "${{ inputs.order_id }}" \
-                --github-id "${{ inputs.github_id }}" \
-                --source-repo "${{ inputs.source_repo }}" \
-                --source-run-id "${{ inputs.source_run_id }}" \
-                --source-artifact-name "${{ inputs.source_artifact_name }}" \
-                --submission-sequence "${{ inputs.submission_sequence }}" \
-                --slot-id "${{ steps.vars.outputs.slot_id }}"
+              regenerate_outputs
             }
 
             stage_outputs
