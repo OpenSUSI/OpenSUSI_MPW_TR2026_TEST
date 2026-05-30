@@ -1,0 +1,11 @@
+{
+  "orderId": "ORD-260530-230906-01",
+  "submissionSequence": 2,
+  "githubId": "TAKE-HooJoo",
+  "sourceRepo": "TAKE-HooJoo/TR-1um_Try01",
+  "sourceRunId": "23324682486",
+  "sourceArtifactName": "GDSII_MDP",
+  "normalizedRepoName": "TAKE-HooJoo/TR-1um_Try01",
+  "gdsFile": "GDSII_MDP.gds",
+  "gdsTopCell": "ORD_260530_230906_01"
+}
