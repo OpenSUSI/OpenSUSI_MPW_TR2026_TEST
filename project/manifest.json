@@ -62,21 +62,21 @@
       "sourceArtifactName": "GDSII_MDP"
     },
     {
-      "type": "fill",
-      "githubId": "000_system",
-      "gdsFile": "users/000_system/GDSII_FILL.gds",
-      "gdsTopCell": "tr_1um_000_system",
+      "type": "user",
+      "githubId": "ishi-kai",
+      "gdsFile": "users/ishi-kai/ORD-260807-070836-01/GDSII_MDP.gds",
+      "gdsTopCell": "ORD_260807_070836_01",
       "x": -1250.0,
       "y": 8750.0,
       "tileIndex": 3,
       "row": 0,
       "col": 3,
-      "submissionSequence": null,
-      "normalizedRepoName": null,
-      "orderId": null,
-      "sourceRepo": null,
-      "sourceRunId": null,
-      "sourceArtifactName": null
+      "submissionSequence": 3,
+      "normalizedRepoName": "ishi-kai/OpenSUSI-MPW-2609-test",
+      "orderId": "ORD-260807-070836-01",
+      "sourceRepo": "ishi-kai/OpenSUSI-MPW-2609-test",
+      "sourceRunId": "31155574840",
+      "sourceArtifactName": "GDSII_MDP"
     },
     {
       "type": "fill",
